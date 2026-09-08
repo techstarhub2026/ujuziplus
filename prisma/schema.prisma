@@ -1,0 +1,1636 @@
+// UjuziLab — Prisma schema
+// Phase 0: Identity & Auth
+// Run:  npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Roles ───────────────────────────────────────────────────────────────────
+enum Role {
+  STUDENT
+  INSTRUCTOR
+  ORG_ADMIN
+  MODERATOR
+  ADMIN
+}
+
+enum InstructorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+model User {
+  id           String @id @default(cuid())
+  fullName     String
+  email        String @unique @db.VarChar(191)
+  username     String @unique @db.VarChar(100)
+  passwordHash String
+  role         Role   @default(STUDENT)
+
+  // Profile fields
+  avatarUrl String?
+  bio       String? @db.Text
+  location  String?
+  website   String?
+  linkedin  String?
+  github    String?
+
+  // Privacy (public profile visibility)
+  publicProfile             Boolean @default(true)
+  showCoursesOnProfile      Boolean @default(true)
+  showCertificatesOnProfile Boolean @default(true)
+
+  // Account state
+  isActive         Boolean            @default(true)
+  emailVerified    Boolean            @default(false)
+  instructorStatus InstructorStatus?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  resetTokens             PasswordResetToken[]
+  signupCredentialTokens  SignupCredentialToken[]
+  instructorCredentials   InstructorCredential[]       @relation("UserInstructorCredentials")
+  courses                 Course[]                     @relation("InstructorCourses")
+  enrollments             Enrollment[]
+  orders                  Order[]                      @relation("UserOrders")
+  quizAttempts            QuizAttempt[]                @relation("UserQuizAttempts")
+  certificates            Certificate[]                @relation("UserCertificates")
+  discussions             Discussion[]                 @relation("UserDiscussions")
+  replies                 DiscussionReply[]            @relation("UserReplies")
+  likes                   DiscussionLike[]             @relation("UserLikes")
+  notifications           Notification[]               @relation("UserNotifications")
+  wishlist                WishlistItem[]               @relation("UserWishlist")
+  assignmentSubmissions   AssignmentSubmission[]       @relation("StudentSubmissions")
+  gradedSubmissions       AssignmentSubmission[]       @relation("GradedSubmissions")
+  payoutProfile           InstructorPayoutProfile?     @relation("InstructorPayoutProfile")
+  payouts                 InstructorPayout[]           @relation("InstructorPayouts")
+  programRegs             ProgramRegistration[]        @relation("UserProgramRegs")
+  competitionRegs         CompetitionRegistration[]    @relation("UserCompetitionRegs")
+  kitPurchases            KitPurchase[]                @relation("UserKitPurchases")
+  orgMemberships          OrganizationMember[]         @relation("UserOrgMemberships")
+  orgKitRequests          OrgKitRequest[]              @relation("UserOrgKitRequests")
+  notificationPreferences NotificationPreference[]     @relation("UserNotificationPrefs")
+  pushSubscriptions       PushSubscription[]           @relation("UserPushSubscriptions")
+  fcmTokens               FcmDeviceToken[]             @relation("UserFcmTokens")
+  orgInvitesSent          OrgInvite[]                  @relation("OrgInvitesSent")
+  projects                Project[]                    @relation("UserProjects")
+  projectLikes            ProjectLike[]                @relation("UserProjectLikes")
+  projectMemberships      ProjectMember[]              @relation("UserProjectMemberships")
+  solutionJoins           SolutionJoin[]               @relation("UserSolutionJoins")
+  authoredSolutions       Solution[]                   @relation("AuthoredSolutions")
+  labResourceBookmarks    UserLabResource[]            @relation("UserLabResources")
+  blogPosts               BlogPost[]                   @relation("UserBlogPosts")
+  followers               UserFollow[]                 @relation("UserFollowers")
+  following               UserFollow[]                 @relation("UserFollowing")
+  mentorProfile           MentorProfile?               @relation("UserMentorProfile")
+  mentorRequests          MentorRequest[]              @relation("LearnerMentorRequests")
+  mentorSessions          MentorSession[]              @relation("LearnerMentorSessions")
+  groupSessionAttendees   MentorGroupSessionAttendee[] @relation("UserGroupSessionAttendees")
+  cohortMemberships       MentorCohortMember[]         @relation("UserCohortMemberships")
+  showcaseProjects        ShowcaseProject[]            @relation("UserShowcaseProjects")
+  showcaseLikes           ShowcaseLike[]               @relation("UserShowcaseLikes")
+
+  @@map("users")
+}
+
+model UserFollow {
+  id          String   @id @default(cuid())
+  followerId  String
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@map("user_follows")
+}
+
+model FcmDeviceToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("UserFcmTokens", fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique @db.VarChar(500)
+  platform  String   @default("web") @db.VarChar(20)
+  label     String?  @db.VarChar(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("fcm_device_tokens")
+}
+
+// ─── Course enums ─────────────────────────────────────────────────────────────
+enum CourseStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  REJECTED
+  ARCHIVED
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum LessonType {
+  VIDEO
+  ARTICLE
+  AUDIO
+  QUIZ
+  ASSIGNMENT
+}
+
+// ─── Courses ──────────────────────────────────────────────────────────────────
+model Course {
+  id            String       @id @default(cuid())
+  title         String
+  slug          String       @unique @db.VarChar(191)
+  subtitle      String?
+  description   String?      @db.Text
+  thumbnailUrl  String?
+  instructorId  String
+  instructor    User         @relation("InstructorCourses", fields: [instructorId], references: [id])
+  category      String?
+  level         CourseLevel  @default(BEGINNER)
+  language      String       @default("English")
+  price         Decimal?     @db.Decimal(10, 2)
+  discountPrice Decimal?     @db.Decimal(10, 2)
+  isFree        Boolean      @default(false)
+  durationHours Float        @default(0)
+  status        CourseStatus @default(DRAFT)
+
+  // Requirements
+  whatYouLearn   Json? // String[]
+  prerequisites  String? @db.Text
+  targetAudience String?
+  linkedKitSlugs Json? // String[]
+
+  // SEO & certificate
+  metaTitle  String?
+  metaDesc   String?
+  enableCert Boolean @default(true)
+
+  // Moderation
+  reviewNote String? @db.Text
+
+  organizationId String?
+  organization   Organization? @relation("OrgCourses", fields: [organizationId], references: [id], onDelete: SetNull)
+
+  modules       CourseModule[]
+  enrollments   Enrollment[]         @relation("Enrollments")
+  orderItems    OrderItem[]          @relation("OrderItems")
+  certificates  Certificate[]        @relation("CourseCertificates")
+  certTemplate  CertificateTemplate? @relation("CourseCertTemplate")
+  discussions   Discussion[]         @relation("CourseDiscussions")
+  wishlistItems WishlistItem[]       @relation("CourseWishlist")
+  programUnits  ProgramUnit[]        @relation("ProgramUnits")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@map("courses")
+}
+
+model CourseModule {
+  id         String   @id @default(cuid())
+  courseId   String
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title      String
+  orderIndex Int      @default(0)
+  lessons    Lesson[]
+  createdAt  DateTime @default(now())
+
+  @@map("course_modules")
+}
+
+model Lesson {
+  id              String       @id @default(cuid())
+  moduleId        String
+  module          CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title           String
+  slug            String       @db.VarChar(191)
+  type            LessonType   @default(ARTICLE)
+  videoUrl        String?
+  articleBody     String?      @db.MediumText
+  audioUrl        String?
+  attachments     Json? // [{ name, url, size }]
+  durationSeconds Int?
+  isFreePreview   Boolean      @default(false)
+  orderIndex      Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  progress   LessonProgress[]
+  quiz       Quiz?
+  assignment Assignment?
+
+  @@map("lessons")
+}
+
+// ─── Quizzes ──────────────────────────────────────────────────────────────────
+
+model Quiz {
+  id        String         @id @default(cuid())
+  lessonId  String         @unique
+  lesson    Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  passMark  Int            @default(70)
+  timeLimit Int?
+  questions QuizQuestion[]
+  attempts  QuizAttempt[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id          String              @id @default(cuid())
+  quizId      String
+  quiz        Quiz                @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  text        String              @db.Text
+  explanation String?             @db.Text
+  orderIndex  Int                 @default(0)
+  options     QuizOption[]
+  answers     QuizAttemptAnswer[]
+  createdAt   DateTime            @default(now())
+
+  @@map("quiz_questions")
+}
+
+model QuizOption {
+  id         String       @id @default(cuid())
+  questionId String
+  question   QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean      @default(false)
+  orderIndex Int          @default(0)
+
+  @@map("quiz_options")
+}
+
+model QuizAttempt {
+  id          String              @id @default(cuid())
+  quizId      String
+  quiz        Quiz                @relation(fields: [quizId], references: [id])
+  userId      String
+  user        User                @relation("UserQuizAttempts", fields: [userId], references: [id])
+  score       Int
+  passed      Boolean
+  startedAt   DateTime            @default(now())
+  completedAt DateTime?
+  answers     QuizAttemptAnswer[]
+
+  @@map("quiz_attempts")
+}
+
+model QuizAttemptAnswer {
+  id         String       @id @default(cuid())
+  attemptId  String
+  attempt    QuizAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId String
+  question   QuizQuestion @relation(fields: [questionId], references: [id])
+  optionId   String?
+  isCorrect  Boolean
+
+  @@map("quiz_attempt_answers")
+}
+
+// ─── Enrollment & progress ────────────────────────────────────────────────────
+
+model Enrollment {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId    String
+  course      Course    @relation("Enrollments", fields: [courseId], references: [id], onDelete: Cascade)
+  enrolledAt  DateTime  @default(now())
+  completedAt DateTime?
+
+  progress              LessonProgress[]
+  assignmentSubmissions AssignmentSubmission[]
+
+  @@unique([userId, courseId])
+  @@map("enrollments")
+}
+
+model LessonProgress {
+  id           String     @id @default(cuid())
+  enrollmentId String
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  lessonId     String
+  lesson       Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  completedAt  DateTime   @default(now())
+
+  @@unique([enrollmentId, lessonId])
+  @@map("lesson_progress")
+}
+
+// ─── Certificates ─────────────────────────────────────────────────────────────
+
+model Certificate {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation("UserCertificates", fields: [userId], references: [id])
+  courseId   String
+  course     Course   @relation("CourseCertificates", fields: [courseId], references: [id])
+  issuedAt   DateTime @default(now())
+  verifyCode String   @unique @default(cuid())
+
+  @@unique([userId, courseId])
+  @@map("certificates")
+}
+
+// PDF template uploaded by instructor/admin. Fields filled: student_name,
+// course_title, instructor_name, issue_date, verify_code, duration_hours
+model CertificateTemplate {
+  id         String   @id @default(cuid())
+  courseId   String   @unique
+  course     Course   @relation("CourseCertTemplate", fields: [courseId], references: [id], onDelete: Cascade)
+  filePath   String
+  uploadedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("certificate_templates")
+}
+
+// ─── Commerce enums ───────────────────────────────────────────────────────────
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  MPESA
+  AIRTEL_MONEY
+  TIGO_PESA
+  HALOPESA
+  CARD
+  BANK_TRANSFER
+}
+
+// ─── Orders ───────────────────────────────────────────────────────────────────
+
+model Order {
+  id             String         @id @default(cuid())
+  userId         String
+  user           User           @relation("UserOrders", fields: [userId], references: [id])
+  status         OrderStatus    @default(PENDING)
+  subtotal       Decimal        @db.Decimal(10, 2)
+  discountAmount Decimal        @default(0) @db.Decimal(10, 2)
+  total          Decimal        @db.Decimal(10, 2)
+  couponCode     String?        @db.VarChar(50)
+  paymentMethod  PaymentMethod?
+  paymentRef     String?        @db.VarChar(191)
+  items          OrderItem[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  courseId  String?
+  course    Course?  @relation("OrderItems", fields: [courseId], references: [id])
+  kitId     String?
+  kit       Kit?     @relation("KitOrderItems", fields: [kitId], references: [id])
+  programId String?
+  program   Program? @relation(fields: [programId], references: [id])
+  price     Decimal  @db.Decimal(10, 2)
+
+  @@map("order_items")
+}
+
+model KitPurchase {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation("UserKitPurchases", fields: [userId], references: [id], onDelete: Cascade)
+  kitId       String
+  kit         Kit      @relation("KitPurchases", fields: [kitId], references: [id], onDelete: Cascade)
+  orderId     String?
+  purchasedAt DateTime @default(now())
+
+  @@unique([userId, kitId])
+  @@map("kit_purchases")
+}
+
+// ─── Password reset ───────────────────────────────────────────────────────────
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique @db.VarChar(191)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
+
+// ─── Signup credential upload token ────────────────────────────────────────────
+// Short-lived token letting a just-registered (still-PENDING, not-yet-signed-in)
+// instructor upload certification files on the step-2 signup page.
+model SignupCredentialToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique @db.VarChar(191)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("signup_credential_tokens")
+}
+
+// ─── Instructor credentials ─────────────────────────────────────────────────────
+model InstructorCredential {
+  id            String    @id @default(cuid())
+  userId        String
+  title         String
+  issuer        String?
+  issueDate     DateTime?
+  credentialUrl String?
+  fileUrl       String?
+  orderIndex    Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation("UserInstructorCredentials", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("instructor_credentials")
+}
+
+// ─── Community & Discussions ──────────────────────────────────────────────────
+
+model Discussion {
+  id            String            @id @default(cuid())
+  authorId      String
+  author        User              @relation("UserDiscussions", fields: [authorId], references: [id])
+  courseId      String?
+  course        Course?           @relation("CourseDiscussions", fields: [courseId], references: [id])
+  channel       String            @default("general") @db.VarChar(100)
+  title         String            @db.VarChar(255)
+  body          String            @db.Text
+  excerpt       String?           @db.Text
+  coverImageUrl String?
+  isPinned      Boolean           @default(false)
+  isResolved    Boolean           @default(false)
+  replies       DiscussionReply[]
+  likes         DiscussionLike[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([channel])
+  @@index([courseId])
+  @@map("discussions")
+}
+
+model DiscussionReply {
+  id           String           @id @default(cuid())
+  discussionId String
+  discussion   Discussion       @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       User             @relation("UserReplies", fields: [authorId], references: [id])
+  body         String           @db.Text
+  isAccepted   Boolean          @default(false)
+  likes        DiscussionLike[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@map("discussion_replies")
+}
+
+model DiscussionLike {
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation("UserLikes", fields: [userId], references: [id])
+  discussionId String?
+  discussion   Discussion?      @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  replyId      String?
+  reply        DiscussionReply? @relation(fields: [replyId], references: [id], onDelete: Cascade)
+  createdAt    DateTime         @default(now())
+
+  @@unique([userId, discussionId])
+  @@unique([userId, replyId])
+  @@map("discussion_likes")
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+enum NotificationType {
+  REPLY_ON_POST
+  LIKE_ON_POST
+  NEW_ENROLLMENT
+  COURSE_COMPLETE
+  CERTIFICATE_ISSUED
+  ASSIGNMENT_SUBMITTED
+  ASSIGNMENT_GRADED
+  ASSIGNMENT_REVISION_REQUESTED
+  MENTOR_REQUEST
+  MENTOR_REQUEST_UPDATE
+  MENTOR_SESSION_SCHEDULED
+  MENTOR_SESSION_REMINDER
+  PROGRAM_REGISTERED
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String           @db.VarChar(255)
+  message   String           @db.Text
+  href      String?          @db.VarChar(500)
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id           String  @id @default(cuid())
+  userId       String
+  user         User    @relation("UserNotificationPrefs", fields: [userId], references: [id], onDelete: Cascade)
+  category     String  @db.VarChar(100)
+  emailEnabled Boolean @default(true)
+  inAppEnabled Boolean @default(true)
+  pushEnabled  Boolean @default(false)
+
+  @@unique([userId, category])
+  @@map("notification_preferences")
+}
+
+// ─── Assignments ──────────────────────────────────────────────────────────────
+
+enum AssignmentSubmissionStatus {
+  DRAFT
+  SUBMITTED
+  REVISION_REQUESTED
+  GRADED
+}
+
+model Assignment {
+  id           String                 @id @default(cuid())
+  lessonId     String                 @unique
+  lesson       Lesson                 @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  instructions String?                @db.Text
+  rubric       Json?
+  maxScore     Int                    @default(100)
+  dueAt        DateTime?
+  submissions  AssignmentSubmission[]
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@map("assignments")
+}
+
+model AssignmentSubmission {
+  id           String                     @id @default(cuid())
+  assignmentId String
+  assignment   Assignment                 @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  enrollmentId String
+  enrollment   Enrollment                 @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                       @relation("StudentSubmissions", fields: [userId], references: [id])
+  status       AssignmentSubmissionStatus @default(DRAFT)
+  textResponse String?                    @db.Text
+  githubUrl    String?                    @db.VarChar(500)
+  score        Int?
+  feedback     String?                    @db.Text
+  submittedAt  DateTime?
+  gradedAt     DateTime?
+  gradedById   String?
+  gradedBy     User?                      @relation("GradedSubmissions", fields: [gradedById], references: [id])
+  files        AssignmentSubmissionFile[]
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+
+  @@unique([assignmentId, enrollmentId])
+  @@map("assignment_submissions")
+}
+
+model AssignmentSubmissionFile {
+  id           String               @id @default(cuid())
+  submissionId String
+  submission   AssignmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  fileName     String               @db.VarChar(255)
+  filePath     String               @db.VarChar(500)
+  mimeType     String?              @db.VarChar(100)
+  sizeBytes    Int?
+
+  @@map("assignment_submission_files")
+}
+
+// ─── Instructor payouts ───────────────────────────────────────────────────────
+
+enum PayoutMethod {
+  MPESA
+  BANK_TRANSFER
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  REJECTED
+}
+
+model InstructorPayoutProfile {
+  id                String       @id @default(cuid())
+  userId            String       @unique
+  user              User         @relation("InstructorPayoutProfile", fields: [userId], references: [id], onDelete: Cascade)
+  preferredMethod   PayoutMethod @default(MPESA)
+  mpesaPhone        String?      @db.VarChar(20)
+  bankName          String?      @db.VarChar(100)
+  bankAccountName   String?      @db.VarChar(100)
+  bankAccountNumber String?      @db.VarChar(50)
+  bankSwift         String?      @db.VarChar(20)
+  updatedAt         DateTime     @updatedAt
+
+  @@map("instructor_payout_profiles")
+}
+
+model InstructorPayout {
+  id           String       @id @default(cuid())
+  instructorId String
+  instructor   User         @relation("InstructorPayouts", fields: [instructorId], references: [id])
+  amount       Decimal      @db.Decimal(10, 2)
+  method       PayoutMethod
+  status       PayoutStatus @default(PENDING)
+  note         String?      @db.Text
+  processedAt  DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([instructorId])
+  @@map("instructor_payouts")
+}
+
+// ─── Learning kits ────────────────────────────────────────────────────────────
+
+enum KitStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum KitDifficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum KitMaterialType {
+  GUIDE
+  VIDEO
+  PDF
+  WORKSHEET
+  PROJECT
+}
+
+model Kit {
+  id                 String            @id @default(cuid())
+  slug               String            @unique @db.VarChar(191)
+  title              String
+  subtitle           String?
+  description        String?           @db.Text
+  thumbnailUrl       String?
+  category           String?           @db.VarChar(100)
+  difficulty         KitDifficulty     @default(BEGINNER)
+  ageRange           String?           @db.VarChar(50)
+  price              Decimal?          @db.Decimal(10, 2)
+  isFree             Boolean           @default(false)
+  status             KitStatus         @default(DRAFT)
+  learningOutcomes   Json?
+  projectIdeas       Json?
+  relatedCourseSlugs Json?
+  inventoryCount     Int               @default(0)
+  components         KitComponent[]
+  materials          KitMaterial[]
+  gallery            KitGalleryImage[]
+  orderItems         OrderItem[]       @relation("KitOrderItems")
+  purchases          KitPurchase[]     @relation("KitPurchases")
+  orgInventory       OrgKitInventory[]
+  orgRequests        OrgKitRequest[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@map("kits")
+}
+
+model KitComponent {
+  id          String  @id @default(cuid())
+  kitId       String
+  kit         Kit     @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  name        String
+  quantity    Int     @default(1)
+  description String? @db.Text
+  imageUrl    String?
+  orderIndex  Int     @default(0)
+
+  @@map("kit_components")
+}
+
+model KitMaterial {
+  id              String          @id @default(cuid())
+  kitId           String
+  kit             Kit             @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  title           String
+  type            KitMaterialType @default(GUIDE)
+  description     String?         @db.Text
+  url             String?
+  durationMinutes Int?
+  orderIndex      Int             @default(0)
+
+  @@map("kit_materials")
+}
+
+model KitGalleryImage {
+  id         String  @id @default(cuid())
+  kitId      String
+  kit        Kit     @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  url        String
+  caption    String? @db.VarChar(255)
+  isPrimary  Boolean @default(false)
+  orderIndex Int     @default(0)
+
+  @@map("kit_gallery_images")
+}
+
+// ─── Wishlist ─────────────────────────────────────────────────────────────────
+
+model WishlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("UserWishlist", fields: [userId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course   @relation("CourseWishlist", fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, courseId])
+  @@map("wishlist_items")
+}
+
+// ─── Programs & competitions ────────────────────────────────────────────────
+
+enum ProgramFormat {
+  ONLINE
+  IN_PERSON
+  HYBRID
+  BOOTCAMP
+  HACKATHON
+}
+
+enum ProgramStatus {
+  DRAFT
+  OPEN
+  FULL
+  CLOSED
+  ARCHIVED
+}
+
+enum ProgramEventType {
+  WORKSHOP
+  ONLINE_SESSION
+  OTHER
+}
+
+model Program {
+  id             String                @id @default(cuid())
+  slug           String                @unique @db.VarChar(191)
+  title          String
+  type           String                @db.VarChar(50)
+  thumbnailUrl   String?
+  posterUrl      String?
+  description    String?               @db.Text
+  startDate      DateTime?
+  endDate        DateTime?
+  format         ProgramFormat         @default(HYBRID)
+  seats          Int                   @default(50)
+  enrolledCount  Int                   @default(0)
+  price          Decimal               @default(0) @db.Decimal(10, 2)
+  status         ProgramStatus         @default(OPEN)
+  organizationId String?
+  organization   Organization?         @relation("OrgPrograms", fields: [organizationId], references: [id])
+  registrations  ProgramRegistration[]
+  orderItems     OrderItem[]
+  units          ProgramUnit[]
+  events         ProgramEvent[]
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@map("programs")
+}
+
+model ProgramRegistration {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation("UserProgramRegs", fields: [userId], references: [id], onDelete: Cascade)
+  programId         String
+  program           Program   @relation(fields: [programId], references: [id], onDelete: Cascade)
+  orderId           String?
+  registeredAt      DateTime  @default(now())
+  progressPct       Int       @default(0)
+  completedAt       DateTime?
+  certificateIssued Boolean   @default(false)
+  certVerifyCode    String?   @unique @db.VarChar(191)
+
+  @@unique([userId, programId])
+  @@map("program_registrations")
+}
+
+model ProgramUnit {
+  id         String   @id @default(cuid())
+  programId  String
+  program    Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  courseId   String
+  course     Course   @relation("ProgramUnits", fields: [courseId], references: [id], onDelete: Cascade)
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@unique([programId, courseId])
+  @@map("program_units")
+}
+
+model ProgramEvent {
+  id        String           @id @default(cuid())
+  programId String
+  program   Program          @relation(fields: [programId], references: [id], onDelete: Cascade)
+  title     String
+  type      ProgramEventType @default(WORKSHOP)
+  startAt   DateTime
+  endAt     DateTime?
+  location  String?
+  agenda    String?          @db.Text
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([programId, startAt])
+  @@map("program_events")
+}
+
+enum CompetitionStatus {
+  UPCOMING
+  REGISTRATION_OPEN
+  IN_PROGRESS
+  COMPLETED
+}
+
+model Competition {
+  id            String                    @id @default(cuid())
+  slug          String                    @unique @db.VarChar(191)
+  title         String
+  thumbnailUrl  String?
+  description   String?                   @db.Text
+  startDate     DateTime?
+  endDate       DateTime?
+  prize         String?                   @db.VarChar(255)
+  teamsCount    Int                       @default(0)
+  status        CompetitionStatus         @default(UPCOMING)
+  registrations CompetitionRegistration[]
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+
+  @@map("competitions")
+}
+
+model CompetitionRegistration {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation("UserCompetitionRegs", fields: [userId], references: [id], onDelete: Cascade)
+  competitionId String
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  teamName      String?     @db.VarChar(100)
+  registeredAt  DateTime    @default(now())
+
+  @@unique([userId, competitionId])
+  @@map("competition_registrations")
+}
+
+// ─── Organizations & org kit logistics ───────────────────────────────────────
+
+enum OrgType {
+  UNIVERSITY
+  HUB
+  SCHOOL
+  NGO
+  GOVERNMENT
+  TECH_COMPANY
+  STARTUP
+  COMMUNITY_ORG
+  WOMEN_YOUTH_GROUP
+  OTHER
+}
+
+enum OrgMemberRole {
+  ADMIN
+  INSTRUCTOR
+  MEMBER
+}
+
+enum OrgKitRequestStatus {
+  PENDING
+  APPROVED
+  FULFILLED
+  REJECTED
+}
+
+model Organization {
+  id           String               @id @default(cuid())
+  slug         String               @unique @db.VarChar(191)
+  name         String
+  type         OrgType              @default(UNIVERSITY)
+  logoUrl      String?
+  memberCount  Int                  @default(0)
+  isVerified   Boolean              @default(false)
+  members      OrganizationMember[]
+  invites      OrgInvite[]
+  kitInventory OrgKitInventory[]
+  kitRequests  OrgKitRequest[]
+  programs     Program[]            @relation("OrgPrograms")
+  solutions    Solution[]           @relation("OrgSolutions")
+  projects     Project[]            @relation("OrgProjects")
+  courses      Course[]             @relation("OrgCourses")
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@map("organizations")
+}
+
+enum OrgInviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+model OrgInvite {
+  id          String          @id @default(cuid())
+  orgId       String
+  org         Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  email       String          @db.VarChar(191)
+  role        OrgMemberRole   @default(MEMBER)
+  token       String          @unique @db.VarChar(191)
+  status      OrgInviteStatus @default(PENDING)
+  invitedById String
+  invitedBy   User            @relation("OrgInvitesSent", fields: [invitedById], references: [id])
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime        @default(now())
+
+  @@index([orgId, status])
+  @@map("org_invites")
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("UserPushSubscriptions", fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @db.VarChar(500)
+  p256dh    String   @db.VarChar(255)
+  auth      String   @db.VarChar(255)
+  userAgent String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, endpoint])
+  @@map("push_subscriptions")
+}
+
+model OrganizationMember {
+  id     String        @id @default(cuid())
+  orgId  String
+  org    Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId String
+  user   User          @relation("UserOrgMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  role   OrgMemberRole @default(MEMBER)
+
+  @@unique([orgId, userId])
+  @@map("organization_members")
+}
+
+model OrgKitInventory {
+  id                String       @id @default(cuid())
+  orgId             String
+  org               Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  kitId             String
+  kit               Kit          @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  quantityOnHand    Int          @default(0)
+  quantityAllocated Int          @default(0)
+  reorderLevel      Int          @default(5)
+
+  @@unique([orgId, kitId])
+  @@map("org_kit_inventory")
+}
+
+model OrgKitRequest {
+  id          String              @id @default(cuid())
+  orgId       String
+  org         Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  kitId       String
+  kit         Kit                 @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  requesterId String
+  requester   User                @relation("UserOrgKitRequests", fields: [requesterId], references: [id])
+  quantity    Int                 @default(1)
+  status      OrgKitRequestStatus @default(PENDING)
+  notes       String?             @db.Text
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@map("org_kit_requests")
+}
+
+// ─── Projects showcase ────────────────────────────────────────────────────────
+
+enum ProjectStatus {
+  IDEA
+  PROTOTYPE
+  MVP
+  LAUNCHED
+}
+
+model Project {
+  id             String          @id @default(cuid())
+  slug           String          @unique @db.VarChar(191)
+  title          String
+  description    String          @db.Text
+  objectives     String?         @db.Text
+  documentation  String?         @db.Text
+  impact         String?         @db.Text
+  thumbnailUrl   String?
+  mediaGallery   Json? // [{ url, type: "image"|"video", caption }]
+  category       String          @db.VarChar(100)
+  tags           Json?
+  status         ProjectStatus   @default(PROTOTYPE)
+  githubUrl      String?         @db.VarChar(500)
+  demoUrl        String?         @db.VarChar(500)
+  creatorId      String
+  creator        User            @relation("UserProjects", fields: [creatorId], references: [id])
+  organizationId String?
+  organization   Organization?   @relation("OrgProjects", fields: [organizationId], references: [id], onDelete: SetNull)
+  teamMembers    ProjectMember[]
+  likesCount     Int             @default(0)
+  isPublished    Boolean         @default(true)
+  likes          ProjectLike[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([creatorId])
+  @@index([organizationId])
+  @@map("projects")
+}
+
+enum ProjectMemberRole {
+  LEAD
+  CONTRIBUTOR
+  MENTOR
+}
+
+model ProjectMember {
+  id         String            @id @default(cuid())
+  projectId  String
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?             @relation("UserProjectMemberships", fields: [userId], references: [id], onDelete: SetNull)
+  name       String
+  role       ProjectMemberRole @default(CONTRIBUTOR)
+  orderIndex Int               @default(0)
+
+  @@map("project_members")
+}
+
+model ProjectLike {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("UserProjectLikes", fields: [userId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, projectId])
+  @@map("project_likes")
+}
+
+// ─── IoT Solutions workspace ─────────────────────────────────────────────────
+
+enum ContentDifficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum SolutionStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  REJECTED
+  ARCHIVED
+}
+
+enum SolutionCategory {
+  SMART_AGRICULTURE
+  SMART_EDUCATION
+  SMART_ENVIRONMENT
+  SMART_HEALTH
+  STARTUP_GARAGE
+}
+
+model Solution {
+  id              String            @id @default(cuid())
+  slug            String            @unique @db.VarChar(191)
+  title           String
+  subtitle        String?
+  description     String            @db.Text
+  category        SolutionCategory  @default(SMART_AGRICULTURE)
+  level           ContentDifficulty @default(BEGINNER)
+  hours           Int               @default(1)
+  thumbnailUrl    String?
+  tags            Json?
+  components      Json?
+  relatedKitSlugs Json?
+  labSteps        Json?
+  codeTemplate    String?           @db.MediumText
+  status          SolutionStatus    @default(DRAFT)
+  // Community authorship
+  authorId        String?
+  author          User?             @relation("AuthoredSolutions", fields: [authorId], references: [id], onDelete: SetNull)
+  orgId           String?
+  organization    Organization?     @relation("OrgSolutions", fields: [orgId], references: [id], onDelete: SetNull)
+  rejectionReason String?
+  viewCount       Int               @default(0)
+  joins           SolutionJoin[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@map("solutions")
+}
+
+model SolutionJoin {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation("UserSolutionJoins", fields: [userId], references: [id], onDelete: Cascade)
+  solutionId  String
+  solution    Solution @relation(fields: [solutionId], references: [id], onDelete: Cascade)
+  labProgress Json?
+  joinedAt    DateTime @default(now())
+
+  @@unique([userId, solutionId])
+  @@map("solution_joins")
+}
+
+// ─── Lab resources ───────────────────────────────────────────────────────────
+
+enum LabResourceType {
+  COMPONENT
+  SENSOR
+  BOARD
+  TOOL
+  GUIDE
+  OTHER
+}
+
+model LabResource {
+  id           String            @id @default(cuid())
+  slug         String            @unique @db.VarChar(191)
+  title        String
+  description  String?           @db.Text
+  content      String?           @db.LongText
+  type         LabResourceType   @default(COMPONENT)
+  category     String?           @db.VarChar(100)
+  fileUrl      String?           @db.VarChar(500)
+  pdfUrls      Json?
+  imageUrls    Json?
+  tags         Json? // String[]
+  externalUrl  String?           @db.VarChar(500)
+  thumbnailUrl String?
+  bookmarks    UserLabResource[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@map("lab_resources")
+}
+
+model UserLabResource {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation("UserLabResources", fields: [userId], references: [id], onDelete: Cascade)
+  labResourceId String
+  labResource   LabResource @relation(fields: [labResourceId], references: [id], onDelete: Cascade)
+  savedAt       DateTime    @default(now())
+
+  @@unique([userId, labResourceId])
+  @@map("user_lab_resources")
+}
+
+// ─── Open Knowledge Resources ────────────────────────────────────────────────
+
+enum OpenKnowledgeCategory {
+  CODING_TUTORIALS
+  AI_IOT_RESOURCES
+  STEM_TEACHING_MATERIALS
+  OPEN_SOURCE_PROJECTS
+  INNOVATION_TOOLKITS
+  ENTREPRENEURSHIP_GUIDES
+  RESEARCH_PUBLICATIONS
+  DIGITAL_LEARNING_MANUALS
+}
+
+model OpenKnowledgeResource {
+  id           String                @id @default(cuid())
+  slug         String                @unique @db.VarChar(191)
+  title        String
+  description  String?               @db.Text
+  category     OpenKnowledgeCategory @default(CODING_TUTORIALS)
+  authorName   String?               @db.VarChar(191)
+  fileUrl      String?               @db.VarChar(500)
+  externalUrl  String?               @db.VarChar(500)
+  thumbnailUrl String?
+  tags         Json? // String[]
+  isFeatured   Boolean               @default(false)
+  viewCount    Int                   @default(0)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([category])
+  @@map("open_knowledge_resources")
+}
+
+// ─── Blog ────────────────────────────────────────────────────────────────────
+
+enum BlogPostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model BlogPost {
+  id          String         @id @default(cuid())
+  slug        String         @unique @db.VarChar(191)
+  title       String
+  excerpt     String?        @db.Text
+  body        String         @db.MediumText
+  category    String         @db.VarChar(100)
+  status      BlogPostStatus @default(PUBLISHED)
+  authorId    String?
+  author      User?          @relation("UserBlogPosts", fields: [authorId], references: [id])
+  publishedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@map("blog_posts")
+}
+
+// ─── Pricing plans (marketing — not billing subscriptions) ───────────────────
+
+model PricingPlan {
+  id        String   @id @default(cuid())
+  slug      String   @unique @db.VarChar(191)
+  name      String
+  price     Decimal  @default(0) @db.Decimal(10, 2)
+  period    String?  @db.VarChar(50)
+  features  Json
+  isPopular Boolean  @default(false)
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  ctaLabel  String   @default("Get started") @db.VarChar(100)
+  ctaHref   String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("pricing_plans")
+}
+
+// ─── Mentors ─────────────────────────────────────────────────────────────────
+
+enum MentorStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MentorType {
+  ACADEMIC // Universities, colleges, researchers
+  INDUSTRY // Companies, startups, professionals
+  INNOVATION // Founders, investors, ecosystem leaders
+  GENERAL
+}
+
+enum MentorRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CLOSED
+}
+
+enum MentorSessionStatus {
+  REQUESTED
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum MentorSessionType {
+  INTRO_CALL
+  GUIDANCE
+  OFFICE_HOURS
+  GROUP_SESSION
+}
+
+enum GroupSessionMode {
+  VIRTUAL
+  PHYSICAL
+  HYBRID
+}
+
+model MentorProfile {
+  id                    String               @id @default(cuid())
+  slug                  String               @unique @db.VarChar(191)
+  userId                String?              @unique
+  user                  User?                @relation("UserMentorProfile", fields: [userId], references: [id], onDelete: SetNull)
+  mentorType            MentorType           @default(GENERAL)
+  displayName           String
+  title                 String?              @db.VarChar(255)
+  company               String?              @db.VarChar(255)
+  companyLogoUrl        String?
+  avatarUrl             String?
+  bio                   String?              @db.Text
+  hook                  String?              @db.VarChar(280)
+  quote                 String?              @db.VarChar(500)
+  videoIntroUrl         String?
+  city                  String?              @db.VarChar(100)
+  country               String?              @db.VarChar(100)
+  expertiseTags         Json                 @default("[]")
+  tracks                Json                 @default("[]")
+  languages             Json                 @default("[]")
+  yearsExperience       Int                  @default(0)
+  linkedin              String?
+  github                String?
+  learningPath          Json                 @default("[]")
+  recommendedCourseIds  Json                 @default("[]")
+  recommendedKitSlugs   Json                 @default("[]")
+  officeHoursNote       String?              @db.Text
+  bookingUrl            String?
+  isFeatured            Boolean              @default(false)
+  isAcceptingRequests   Boolean              @default(true)
+  agreedToCodeOfConduct Boolean              @default(false)
+  studentsHelped        Int                  @default(0)
+  averageRating         Float?
+  ratingCount           Int                  @default(0)
+  sortOrder             Int                  @default(0)
+  status                MentorStatus         @default(DRAFT)
+  requests              MentorRequest[]
+  sessions              MentorSession[]
+  officeHours           MentorOfficeHour[]
+  groupSessions         MentorGroupSession[]
+  cohorts               MentorCohort[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@map("mentor_profiles")
+}
+
+model MentorRequest {
+  id          String              @id @default(cuid())
+  learnerId   String
+  learner     User                @relation("LearnerMentorRequests", fields: [learnerId], references: [id], onDelete: Cascade)
+  mentorId    String
+  mentor      MentorProfile       @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  goal        String              @db.VarChar(500)
+  message     String              @db.Text
+  status      MentorRequestStatus @default(PENDING)
+  mentorReply String?             @db.Text
+  sessions    MentorSession[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([learnerId])
+  @@index([mentorId])
+  @@map("mentor_requests")
+}
+
+model MentorSession {
+  id              String              @id @default(cuid())
+  mentorId        String
+  mentor          MentorProfile       @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  learnerId       String
+  learner         User                @relation("LearnerMentorSessions", fields: [learnerId], references: [id], onDelete: Cascade)
+  requestId       String?
+  request         MentorRequest?      @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  type            MentorSessionType   @default(GUIDANCE)
+  status          MentorSessionStatus @default(REQUESTED)
+  topic           String?             @db.VarChar(500)
+  notes           String?             @db.Text
+  scheduledAt     DateTime?
+  durationMins    Int                 @default(30)
+  meetingUrl      String?
+  smsReminderSent Boolean             @default(false)
+  // Learner feedback after session
+  rating          Int? // 1–5
+  learnerFeedback String?             @db.VarChar(1000)
+  ratedAt         DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([mentorId])
+  @@index([learnerId])
+  @@index([scheduledAt])
+  @@map("mentor_sessions")
+}
+
+model MentorOfficeHour {
+  id          String        @id @default(cuid())
+  mentorId    String
+  mentor      MentorProfile @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  title       String        @db.VarChar(255)
+  description String?       @db.Text
+  dayOfWeek   Int
+  startTime   String        @db.VarChar(10)
+  endTime     String        @db.VarChar(10)
+  timezone    String        @default("Africa/Dar_es_Salaam") @db.VarChar(50)
+  meetingUrl  String?
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([mentorId])
+  @@map("mentor_office_hours")
+}
+
+model MentorGroupSession {
+  id           String                       @id @default(cuid())
+  mentorId     String
+  mentor       MentorProfile                @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  cohortId     String?
+  cohort       MentorCohort?                @relation(fields: [cohortId], references: [id], onDelete: SetNull)
+  title        String
+  description  String?                      @db.Text
+  sessionMode  GroupSessionMode             @default(VIRTUAL)
+  venue        String?                      @db.VarChar(500)
+  scheduledAt  DateTime
+  durationMins Int                          @default(60)
+  maxAttendees Int                          @default(20)
+  meetingUrl   String?
+  recordingUrl String?
+  channelSlug  String                       @default("mentorship") @db.VarChar(50)
+  isActive     Boolean                      @default(true)
+  attendees    MentorGroupSessionAttendee[]
+  createdAt    DateTime                     @default(now())
+  updatedAt    DateTime                     @updatedAt
+
+  @@index([mentorId])
+  @@index([cohortId])
+  @@index([scheduledAt])
+  @@map("mentor_group_sessions")
+}
+
+model MentorGroupSessionAttendee {
+  id        String             @id @default(cuid())
+  sessionId String
+  session   MentorGroupSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User               @relation("UserGroupSessionAttendees", fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime           @default(now())
+
+  @@unique([sessionId, userId])
+  @@map("mentor_group_session_attendees")
+}
+
+// ─── Mentorship Cohorts ───────────────────────────────────────────────────────
+
+model MentorCohort {
+  id          String               @id @default(cuid())
+  mentorId    String
+  mentor      MentorProfile        @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  title       String               @db.VarChar(255)
+  description String?              @db.Text
+  track       String               @db.VarChar(100)
+  startsAt    DateTime
+  endsAt      DateTime?
+  maxMembers  Int                  @default(20)
+  isActive    Boolean              @default(true)
+  members     MentorCohortMember[]
+  sessions    MentorGroupSession[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([mentorId])
+  @@map("mentor_cohorts")
+}
+
+model MentorCohortMember {
+  id       String       @id @default(cuid())
+  cohortId String
+  cohort   MentorCohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User         @relation("UserCohortMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime     @default(now())
+
+  @@unique([cohortId, userId])
+  @@index([userId])
+  @@map("mentor_cohort_members")
+}
+
+// ─── Innovation Showcase ──────────────────────────────────────────────────────
+
+enum ShowcaseStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  REJECTED
+}
+
+model ShowcaseProject {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation("UserShowcaseProjects", fields: [userId], references: [id], onDelete: Cascade)
+  title        String         @db.VarChar(255)
+  tagline      String?        @db.VarChar(280)
+  description  String         @db.Text
+  thumbnailUrl String?
+  demoUrl      String?
+  repoUrl      String?
+  videoUrl     String?
+  techStack    Json           @default("[]")
+  track        String?        @db.VarChar(100)
+  status       ShowcaseStatus @default(DRAFT)
+  isFeatured   Boolean        @default(false)
+  viewCount    Int            @default(0)
+  likeCount    Int            @default(0)
+  likes        ShowcaseLike[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("showcase_projects")
+}
+
+model ShowcaseLike {
+  id        String          @id @default(cuid())
+  projectId String
+  project   ShowcaseProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User            @relation("UserShowcaseLikes", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@map("showcase_likes")
+}
+
+// ─── Platform-wide settings (singleton) ────────────────────────────────────
+
+model PlatformSettings {
+  id                        String   @id @default("singleton")
+  homeSectionBackgroundUrl  String?
+  /// "tile" (repeat at natural size — best for patterns/textures) or
+  /// "cover" (stretch to fill — best for photos)
+  homeSectionBackgroundMode String   @default("tile")
+
+  // ─── Homepage particle network background ──────────────────────────────
+  particlesEnabled          Boolean  @default(false)
+  /// Comma-separated hex colors, e.g. "#f39223,#00004D,#1a1a6b"
+  particlesColors           String   @default("#f39223,#00004D,#1a1a6b,#e0831a")
+  particlesRainbowMode      Boolean  @default(false)
+  particlesSpeed            Float    @default(1)
+  particlesConnectDistance  Int      @default(140)
+  particlesLineThickness    Float    @default(1)
+  /// Density multiplier applied on top of the default particle count. 1 = current default.
+  particlesIntensity        Float    @default(1)
+  /// "repel" (hover pushes particles away) or "attract" (click-drag pulls them in)
+  particlesInteraction      String   @default("repel")
+  /// "full" (entire homepage, top to bottom) or "belowFeatured" (from the
+  /// Trending/Featured courses section downward, showing only through the
+  /// empty white gaps between cards/photos — content sections stay opaque)
+  particlesScope             String   @default("full")
+
+  updatedAt                 DateTime @updatedAt
+
+  @@map("platform_settings")
+}

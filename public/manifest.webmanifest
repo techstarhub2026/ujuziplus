@@ -1,0 +1,23 @@
+{
+  "name": "ujuziPlus",
+  "short_name": "ujuziPlus",
+  "description": "Africa's modern learning and innovation ecosystem.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#00004D",
+  "theme_color": "#f39223",
+  "icons": [
+    {
+      "src": "/favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/log.png",
+      "sizes": "1536x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

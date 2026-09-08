@@ -1,0 +1,61 @@
+/* UjuziLab shell layout — LabPage / LabDrawer (sidebar chrome untouched) */
+
+.LabPage {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.LabPage-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.wazilab-section-title {
+  font-family: var(--font-poppins), system-ui, sans-serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #00004d;
+  margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.wazilab-section-title::before {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 1.5rem;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, #ffb347, #f39223, #d97f12);
+  box-shadow: 0 0 16px rgb(243 146 35 / 0.45);
+  flex-shrink: 0;
+}
+
+.wazilab-section-desc {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: #6b7280;
+  margin-bottom: 1.5rem;
+  max-width: 42rem;
+}
+
+.LabPage-main .learner-canvas {
+  min-height: 100%;
+  max-width: 100%;
+}
+
+.LabDrawer-paper {
+  overflow-x: hidden;
+}
+
+.LabDrawer-paper:hover {
+  width: 250px !important;
+}

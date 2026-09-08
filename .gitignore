@@ -1,0 +1,65 @@
+# Dependencies
+/node_modules
+
+# Next.js build
+/.next/
+/out/
+
+# Production build
+/build
+
+# Environment — NEVER commit these
+.env
+.env.local
+.env.*.local
+.env.development
+
+# Uploads (user content)
+/public/uploads/
+
+# Prisma generated (re-generated on install)
+/node_modules/.prisma/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+.vercel
+.env*
+
+# Offline W3Schools mirror served at /open-knowledge (~2 GB, extracted from the RAR)
+/public/w3schools/
+/W3Schools Offline 2022.rar
+
+# Agent/editor local config — never part of the shipped product
+.claude/
+CLAUDE.md
+.mcp.json
+
+# Reference/scratch material — not part of the shipped application
+/homepage/
+/clones/
+/waziup_labresources pages/
+/waziup_programs/
+/inspiration/
+/artworks/
+/helicopter-viewer/
+*.rar
+attack_helicopter_concept.glb
+/certs/
+/mc/
+/*.pdf
+/docs/*.pdf
+
+# Favicon-cropping scratch iterations and TS build cache
+tmp-*.png
+tsconfig.tsbuildinfo
