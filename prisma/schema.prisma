@@ -32,7 +32,10 @@ model User {
   fullName     String
   email        String @unique @db.VarChar(191)
   username     String @unique @db.VarChar(100)
-  passwordHash String
+  /// Null for accounts created through Google sign-in, which never set a
+  /// password. Such a user signs in through Google only, unless they later
+  /// set a password.
+  passwordHash String?
   role         Role   @default(STUDENT)
 
   // Profile fields

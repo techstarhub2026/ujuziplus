@@ -15,6 +15,7 @@ import {
   AuthLogo,
   authInputClass,
   authButtonClass,
+  GoogleSignInButton,
 } from "@/components/auth/AuthShell";
 
 export default function RegisterPage() {
@@ -128,6 +129,8 @@ export default function RegisterPage() {
             .
           </p>
         </form>
+
+        <GoogleSignInButton disabled={loading} label="Sign up with Google" />
       </AuthCard>
     </AuthShell>
   );

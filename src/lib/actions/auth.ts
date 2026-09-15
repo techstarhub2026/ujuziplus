@@ -369,6 +369,12 @@ export async function changePassword(
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) return { error: "User not found." };
 
+  // A Google account has no password to change; it would have to be set
+  // first, which is a different flow from replacing a known one.
+  if (!user.passwordHash) {
+    return { error: "This account signs in with Google and has no password to change." };
+  }
+
   const valid = await compare(input.currentPassword, user.passwordHash);
   if (!valid) return { error: "Current password is incorrect." };
 

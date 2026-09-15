@@ -15,6 +15,7 @@ import {
   AuthCard,
   AuthLogo,
   authButtonClass,
+  GoogleSignInButton,
 } from "@/components/auth/AuthShell";
 
 function LoginForm() {
@@ -120,6 +121,8 @@ function LoginForm() {
             {loading ? <UjuziLoader size="sm" className="ujuzi-loader--on-brand" label="Signing in" /> : "Sign in"}
           </button>
         </form>
+
+        <GoogleSignInButton callbackUrl={callbackUrl} disabled={loading} />
       </AuthCard>
     </AuthShell>
   );
