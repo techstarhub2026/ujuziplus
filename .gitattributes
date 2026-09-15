@@ -1,0 +1,6 @@
+# Shell scripts must keep LF endings. `railway up` uploads the working copy
+# rather than the committed blobs, so on Windows — where core.autocrlf
+# rewrites checkouts to CRLF — a script that is LF in git still reaches the
+# Linux container with carriage returns in it. /bin/sh then reads the \r as
+# part of each command and the container crash-loops on startup.
+*.sh text eol=lf
