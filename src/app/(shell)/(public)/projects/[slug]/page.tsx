@@ -53,14 +53,20 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
 
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
         <div className="flex flex-col gap-8 lg:flex-row lg:items-stretch">
+          {/* Covers are wide banners that often carry the project name in the
+              artwork. Stretching one to fill a 288px-wide column meant
+              object-cover cropped its sides and sliced the first word in half
+              — "Solar Vaccine Fridge" arrived as "ccine Fridge". Hold the
+              16:9 shape at every width and contain rather than cover, so the
+              whole image is visible whatever its proportions. */}
           {project.thumbnailUrl && (
-            <ImageContainer className="relative aspect-video w-full shrink-0 overflow-hidden rounded-xl shadow-md lg:sticky lg:top-24 lg:aspect-auto lg:h-auto lg:w-72 lg:self-stretch">
+            <ImageContainer className="relative aspect-video w-full shrink-0 overflow-hidden rounded-xl bg-gray-100 shadow-md lg:sticky lg:top-24 lg:w-72">
               <OptimizedImage
                 src={project.thumbnailUrl}
                 alt={project.title}
                 fill
                 sizes="(max-width: 1024px) 100vw, 288px"
-                className="object-cover"
+                className="object-contain"
               />
             </ImageContainer>
           )}

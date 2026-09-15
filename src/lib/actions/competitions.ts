@@ -82,13 +82,37 @@ export async function getUserCompetitionRegistrations(userId: string) {
   return regs;
 }
 
+export interface CompetitionEntry {
+  teamName: string;
+  country: string;
+  schoolName?: string;
+  memberCount?: number;
+  memberNames?: string;
+  ageRange?: string;
+  contactPhone?: string;
+}
+
+/**
+ * Registers a team.
+ *
+ * The form used to ask for an optional team name and nothing else, so an
+ * organiser running national qualifiers across four countries received entries
+ * with no country, no school and no members — all of it chased by email
+ * afterwards. Team name and country are required now, the rest is collected
+ * while the entrant is here.
+ */
 export async function registerForCompetition(
   userId: string,
   competitionSlug: string,
-  teamName?: string
+  entry: CompetitionEntry
 ): Promise<ActionResult> {
   const { user } = await requireUser();
   assertSelfOrAdmin(user.id, userId, user.role);
+
+  const teamName = entry.teamName?.trim() ?? "";
+  const country = entry.country?.trim() ?? "";
+  if (!teamName) return { success: false, error: "Enter a team name." };
+  if (!country) return { success: false, error: "Select the country your team is entering from." };
 
   const competition = await db.competition.findUnique({
     where: { slug: competitionSlug },
@@ -107,7 +131,13 @@ export async function registerForCompetition(
       data: {
         userId,
         competitionId: competition.id,
-        teamName: teamName?.trim() || null,
+        teamName,
+        country,
+        schoolName: entry.schoolName?.trim() || null,
+        memberCount: Number.isFinite(entry.memberCount) ? entry.memberCount : null,
+        memberNames: entry.memberNames?.trim() || null,
+        ageRange: entry.ageRange?.trim() || null,
+        contactPhone: entry.contactPhone?.trim() || null,
       },
     }),
     db.competition.update({

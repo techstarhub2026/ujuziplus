@@ -928,7 +928,21 @@ model CompetitionRegistration {
   user          User        @relation("UserCompetitionRegs", fields: [userId], references: [id], onDelete: Cascade)
   competitionId String
   competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  /// Required in the form. It was optional, which left entries identifiable
+  /// only by whoever happened to submit them — no use to an organiser running
+  /// a multi-country league.
   teamName      String?     @db.VarChar(100)
+  /// These competitions run national qualifiers across several countries, so
+  /// an entry that does not say where it is from cannot be placed in a bracket.
+  country       String?     @db.VarChar(60)
+  /// Who is actually entering: the school or club, how many are on the team,
+  /// their names and age range. Organisers were left to chase all of this by
+  /// email after the fact.
+  schoolName    String?     @db.VarChar(160)
+  memberCount   Int?
+  memberNames   String?     @db.Text
+  ageRange      String?     @db.VarChar(40)
+  contactPhone  String?     @db.VarChar(40)
   registeredAt  DateTime    @default(now())
 
   @@unique([userId, competitionId])

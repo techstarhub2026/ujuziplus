@@ -4,7 +4,6 @@ import { CHANNELS } from "@/lib/discussions/channels";
 import { CommunityComposerBar, CommunityComposerBarGuest } from "@/components/community/CommunityComposerBar";
 import { CommunityChannelPills } from "@/components/community/CommunityChannelPills";
 import { CommunityDiscussionFeed } from "@/components/community/CommunityDiscussionFeed";
-import { CommunityChannelNav } from "@/components/community/CommunityChannelNav";
 import { getChannel } from "@/lib/discussions/channels";
 import { CommunityChannelIcon } from "@/components/community/CommunityChannelIcon";
 
@@ -135,9 +134,11 @@ export function CommunityHubLayout({
 
         {!guest && (
           <aside className="community-hub-sidebar">
-            <div className="community-hub-sidebar__card">
-              <CommunityChannelNav activeSlug={activeChannel} />
-            </div>
+            {/* The channel list used to repeat here, below an identical row of
+                pills at the top of the same page — the same links twice, with
+                the copy in the sidebar visible only on desktop. The pills
+                work at every width, so they are the one channel switcher and
+                the sidebar keeps what it alone offers. */}
             <div className="community-hub-sidebar__card community-hub-sidebar__tips">
               <h4 className="font-display text-sm font-bold text-navy">Quick tips</h4>
               <ul className="mt-2 space-y-2 text-xs leading-relaxed text-gray-500">

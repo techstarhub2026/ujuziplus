@@ -337,13 +337,27 @@ export function DiscussionThread({
               <dt>Author followers</dt>
               <dd className="font-medium text-gray-700">{follow.followerCount}</dd>
             </div>
-            <div className="flex justify-between">
+            {/* Read-only on purpose: a thread turns Resolved when its author
+                accepts an answer, never by toggling this. Styled as bold
+                coloured text it looked like a button, so readers clicked it
+                and nothing happened — a badge with an explanation reads as
+                the status it is. */}
+            <div className="flex items-start justify-between gap-3">
               <dt>Status</dt>
-              <dd>
+              <dd className="text-right">
                 {discussion.isResolved ? (
-                  <span className="text-green-600 font-medium">Resolved</span>
+                  <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                    Resolved
+                  </span>
                 ) : (
-                  <span className="text-orange-600 font-medium">Open</span>
+                  <>
+                    <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700">
+                      Open
+                    </span>
+                    <p className="mt-1 text-xs font-normal text-gray-400">
+                      Resolves when the author accepts an answer
+                    </p>
+                  </>
                 )}
               </dd>
             </div>
