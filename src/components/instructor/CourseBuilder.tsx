@@ -475,10 +475,11 @@ function StepBasicInfo({ courseId, instructorId, data, onChange, onSaved }: {
   onChange: (p: Partial<CourseData>) => void; onSaved: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState("");
   const descLen = (data.description ?? "").length;
 
-  async function handleSave() {
+  async function handleSave(advance = true) {
     if (!data.title?.trim() || data.title === "Untitled course") {
       setError("Please enter a course title."); return;
     }
@@ -490,7 +491,8 @@ function StepBasicInfo({ courseId, instructorId, data, onChange, onSaved }: {
     });
     setSaving(false);
     if (!res.success) { setError(res.error); return; }
-    onSaved();
+    setSavedAt(Date.now());
+    if (advance) onSaved();
   }
 
   return (
@@ -577,9 +579,18 @@ function StepBasicInfo({ courseId, instructorId, data, onChange, onSaved }: {
       />
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button onClick={handleSave} disabled={saving}>
-        {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : "Save & continue →"}
-      </Button>
+      {/* Saving used to always jump to the next step, so there was no way to
+          keep working on the step you were already on. "Save" stays put and
+          says so; "Save & continue" keeps the original flow. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => handleSave(true)} disabled={saving}>
+          {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : "Save & continue →"}
+        </Button>
+        <Button variant="outline" onClick={() => handleSave(false)} disabled={saving}>
+          Save
+        </Button>
+        {savedAt && !saving && <span className="text-sm text-green-600">Saved</span>}
+      </div>
     </Card>
   );
 }
@@ -877,11 +888,12 @@ function StepRequirements({ courseId, instructorId, data, publishedKits, onChang
   onChange: (p: Partial<CourseData>) => void; onSaved: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState("");
   const objectives: string[] = Array.isArray(data.whatYouLearn) ? data.whatYouLearn : [];
   const kitSlugs: string[] = Array.isArray(data.linkedKitSlugs) ? data.linkedKitSlugs : [];
 
-  async function handleSave() {
+  async function handleSave(advance = true) {
     setSaving(true); setError("");
     const res = await saveRequirements(courseId, instructorId, {
       whatYouLearn: objectives.filter(Boolean),
@@ -891,7 +903,8 @@ function StepRequirements({ courseId, instructorId, data, publishedKits, onChang
     });
     setSaving(false);
     if (!res.success) { setError(res.error); return; }
-    onSaved();
+    setSavedAt(Date.now());
+    if (advance) onSaved();
   }
 
   return (
@@ -969,9 +982,18 @@ function StepRequirements({ courseId, instructorId, data, publishedKits, onChang
       )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button onClick={handleSave} disabled={saving}>
-        {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : "Save & continue →"}
-      </Button>
+      {/* Saving used to always jump to the next step, so there was no way to
+          keep working on the step you were already on. "Save" stays put and
+          says so; "Save & continue" keeps the original flow. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => handleSave(true)} disabled={saving}>
+          {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : "Save & continue →"}
+        </Button>
+        <Button variant="outline" onClick={() => handleSave(false)} disabled={saving}>
+          Save
+        </Button>
+        {savedAt && !saving && <span className="text-sm text-green-600">Saved</span>}
+      </div>
     </Card>
   );
 }
@@ -983,9 +1005,10 @@ function StepPricing({ courseId, instructorId, data, onChange, onSaved }: {
   onChange: (p: Partial<CourseData>) => void; onSaved: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState("");
 
-  async function handleSave() {
+  async function handleSave(advance = true) {
     setSaving(true); setError("");
     const res = await savePricing(courseId, instructorId, {
       isFree: data.isFree,
@@ -994,7 +1017,8 @@ function StepPricing({ courseId, instructorId, data, onChange, onSaved }: {
     });
     setSaving(false);
     if (!res.success) { setError(res.error); return; }
-    onSaved();
+    setSavedAt(Date.now());
+    if (advance) onSaved();
   }
 
   return (
@@ -1051,9 +1075,18 @@ function StepPricing({ courseId, instructorId, data, onChange, onSaved }: {
       )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button onClick={handleSave} disabled={saving}>
-        {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : "Save & continue →"}
-      </Button>
+      {/* Saving used to always jump to the next step, so there was no way to
+          keep working on the step you were already on. "Save" stays put and
+          says so; "Save & continue" keeps the original flow. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => handleSave(true)} disabled={saving}>
+          {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : "Save & continue →"}
+        </Button>
+        <Button variant="outline" onClick={() => handleSave(false)} disabled={saving}>
+          Save
+        </Button>
+        {savedAt && !saving && <span className="text-sm text-green-600">Saved</span>}
+      </div>
     </Card>
   );
 }
@@ -1065,10 +1098,11 @@ function StepSEO({ courseId, instructorId, data, onChange, onSaved }: {
   onChange: (p: Partial<CourseData>) => void; onSaved: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState("");
   const metaLen = (data.metaDesc ?? "").length;
 
-  async function handleSave() {
+  async function handleSave(advance = true) {
     setSaving(true); setError("");
     const res = await saveSEO(courseId, instructorId, {
       metaTitle: data.metaTitle ?? "",
@@ -1077,7 +1111,8 @@ function StepSEO({ courseId, instructorId, data, onChange, onSaved }: {
     });
     setSaving(false);
     if (!res.success) { setError(res.error); return; }
-    onSaved();
+    setSavedAt(Date.now());
+    if (advance) onSaved();
   }
 
   return (
@@ -1130,9 +1165,18 @@ function StepSEO({ courseId, instructorId, data, onChange, onSaved }: {
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button onClick={handleSave} disabled={saving}>
-        {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : "Save & continue →"}
-      </Button>
+      {/* Saving used to always jump to the next step, so there was no way to
+          keep working on the step you were already on. "Save" stays put and
+          says so; "Save & continue" keeps the original flow. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => handleSave(true)} disabled={saving}>
+          {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : "Save & continue →"}
+        </Button>
+        <Button variant="outline" onClick={() => handleSave(false)} disabled={saving}>
+          Save
+        </Button>
+        {savedAt && !saving && <span className="text-sm text-green-600">Saved</span>}
+      </div>
     </Card>
   );
 }
