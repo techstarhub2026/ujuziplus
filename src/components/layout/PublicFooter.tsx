@@ -37,7 +37,6 @@ export function PublicFooter() {
               <li><Link href="/kits" className="hover:text-white">Learning Kits</Link></li>
               <li><Link href="/solutions" className="hover:text-white">Solutions</Link></li>
               <li><Link href="/lab-resources" className="hover:text-white">Lab Resources</Link></li>
-              <li><Link href="/open-knowledge" className="hover:text-white">Open Knowledge</Link></li>
               <li><Link href="/projects" className="hover:text-white">Projects</Link></li>
               <li><Link href="/competitions" className="hover:text-white">Competitions</Link></li>
               <li><Link href="/community" className="hover:text-white">Community</Link></li>

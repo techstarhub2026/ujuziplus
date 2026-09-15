@@ -525,6 +525,16 @@ export function SolutionEditorForm({
       </Card>
 
       {/* ── Actions ── */}
+      {/* Submitting is only possible once the project exists, so on a new one
+          the sole button is "Save draft" and nothing says review is a second
+          step — readers took the draft to be the submission. Spell the order
+          out while that is still ahead of them. */}
+      {!solutionId && (
+        <p className="pb-3 text-sm text-gray-500">
+          Step 1 of 2 — save a draft first, then submit it for review.
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-3 pb-8">
         <Button variant="outline" disabled={isPending} onClick={handleSaveDraft}>
           <Save className="h-4 w-4 mr-1.5" />

@@ -60,8 +60,14 @@ export default async function DashboardSolutionsPage() {
           ))}
         </div>
       ) : (
-        <Card className="py-12 text-center text-sm text-gray-400">
-          You have not submitted any solutions yet.
+        <Card className="py-12 text-center">
+          <p className="text-sm text-gray-500">You have not submitted any solutions yet.</p>
+          <p className="mt-1 text-sm text-gray-400">
+            Share a project to get started — it appears here once submitted.
+          </p>
+          <Button asChild className="mt-5">
+            <Link href="/solutions/new">Share a project</Link>
+          </Button>
         </Card>
       )}
     </div>

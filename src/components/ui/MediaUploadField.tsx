@@ -124,8 +124,16 @@ function VideoPreview({ url }: { url: string }) {
   );
 }
 
+/**
+ * Turns an accept attribute into a readable format list.
+ *
+ * The accept strings carry each format twice — as a MIME type and as a file
+ * extension — because browsers and platforms disagree about which they honour.
+ * Both spellings reduce to the same label, so the list has to be deduplicated
+ * or the reader sees "JPEG · PNG · WEBP · … · JPEG · PNG · WEBP · …".
+ */
 function formatAcceptTypes(accept: string): string {
-  return accept
+  const labels = accept
     .split(",")
     .map((raw) => {
       const token = raw.trim();
@@ -138,7 +146,11 @@ function formatAcceptTypes(accept: string): string {
       return token.toUpperCase();
     })
     .filter(Boolean)
-    .join(" · ");
+    // JPG and JPEG are the same format under two names; showing both adds
+    // nothing for a reader deciding whether their file will be accepted.
+    .map((label) => (label === "JPG" ? "JPEG" : label));
+
+  return labels.filter((label, i) => labels.indexOf(label) === i).join(" · ");
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
