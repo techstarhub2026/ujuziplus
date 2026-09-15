@@ -1,20 +1,52 @@
 import crypto from "crypto";
+import { db } from "@/lib/db";
 
 const BASE_URL = "https://api.clickpesa.com";
 
 // In-memory token cache — resets on server restart, fine since token lasts 1h
 let _tokenCache: { value: string; expiresAt: number } | null = null;
 
+/**
+ * ClickPesa credentials, preferring what an admin saved in the console over
+ * the environment. Production had neither the CLICKPESA_* variables set nor
+ * any way to add them without a redeploy, so checkout sent `undefined` as its
+ * client-id and api-key and every payment came back "Invalid client details".
+ */
+export async function getClickPesaCredentials() {
+  const settings = await db.platformSettings
+    .findUnique({ where: { id: "singleton" } })
+    .catch(() => null);
+
+  return {
+    clientId: settings?.clickpesaClientId?.trim() || process.env.CLICKPESA_CLIENT_ID || "",
+    apiKey: settings?.clickpesaApiKey?.trim() || process.env.CLICKPESA_API_KEY || "",
+    webhookSecret:
+      settings?.clickpesaWebhookSecret?.trim() || process.env.CLICKPESA_WEBHOOK_SECRET || "",
+  };
+}
+
+/** Clears the cached token, so rotated keys take effect on the next call. */
+export function resetClickPesaToken() {
+  _tokenCache = null;
+}
+
 async function getToken(): Promise<string> {
   if (_tokenCache && Date.now() < _tokenCache.expiresAt - 30_000) {
     return _tokenCache.value;
   }
 
+  const { clientId, apiKey } = await getClickPesaCredentials();
+  if (!clientId || !apiKey) {
+    throw new Error(
+      "ClickPesa is not configured. Add the client ID and API key under Admin → Settings."
+    );
+  }
+
   const res = await fetch(`${BASE_URL}/third-parties/generate-token`, {
     method: "POST",
     headers: {
-      "client-id": process.env.CLICKPESA_CLIENT_ID!,
-      "api-key": process.env.CLICKPESA_API_KEY!,
+      "client-id": clientId,
+      "api-key": apiKey,
     },
   });
 

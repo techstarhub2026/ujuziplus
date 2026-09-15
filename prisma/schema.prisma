@@ -1633,6 +1633,14 @@ model PlatformSettings {
   /// empty white gaps between cards/photos — content sections stay opaque)
   particlesScope             String   @default("full")
 
+  // ─── ClickPesa payment credentials ─────────────────────────────────────
+  /// Set from the admin console rather than an environment variable, so an
+  /// operator can rotate the keys without a redeploy. Falling back to the
+  /// CLICKPESA_* env vars keeps any existing deployment working.
+  clickpesaClientId         String?  @db.VarChar(255)
+  clickpesaApiKey           String?  @db.VarChar(255)
+  clickpesaWebhookSecret    String?  @db.VarChar(255)
+
   updatedAt                 DateTime @updatedAt
 
   @@map("platform_settings")

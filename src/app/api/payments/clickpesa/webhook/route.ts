@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { verifyWebhookChecksum, channelToPaymentMethod } from "@/lib/clickpesa";
+import {
+  verifyWebhookChecksum,
+  channelToPaymentMethod,
+  getClickPesaCredentials,
+} from "@/lib/clickpesa";
 import { processPaymentConfirmation } from "@/lib/payment-confirmation";
 
 export async function POST(req: NextRequest) {
@@ -8,7 +12,7 @@ export async function POST(req: NextRequest) {
     const payload = (await req.json()) as Record<string, unknown>;
 
     // Verify checksum when a webhook secret is configured
-    const secret = process.env.CLICKPESA_WEBHOOK_SECRET;
+    const { webhookSecret: secret } = await getClickPesaCredentials();
     if (secret && payload.checksum) {
       const valid = verifyWebhookChecksum(
         payload,

@@ -75,3 +75,42 @@ export async function updateParticlesSettings(
   revalidateTag("platform-settings");
   return { success: true, data: undefined };
 }
+
+/**
+ * ClickPesa API credentials.
+ *
+ * Kept here rather than in environment variables so an operator can rotate
+ * them from the console without a redeploy — production had no CLICKPESA_*
+ * variables at all, which is why checkout failed with "Invalid client
+ * details" for every payment.
+ *
+ * A blank field clears the stored value and falls back to the environment.
+ * The cached auth token is dropped so new keys apply to the next payment
+ * rather than after the old token expires an hour later.
+ */
+export async function updateClickPesaCredentials(input: {
+  clientId: string;
+  apiKey: string;
+  webhookSecret: string;
+}): Promise<ActionResult> {
+  await requireAdmin();
+
+  const data = {
+    clickpesaClientId: input.clientId.trim() || null,
+    clickpesaApiKey: input.apiKey.trim() || null,
+    clickpesaWebhookSecret: input.webhookSecret.trim() || null,
+  };
+
+  await db.platformSettings.upsert({
+    where: { id: SETTINGS_ID },
+    update: data,
+    create: { id: SETTINGS_ID, ...data },
+  });
+
+  const { resetClickPesaToken } = await import("@/lib/clickpesa");
+  resetClickPesaToken();
+
+  revalidatePath("/admin/settings");
+  revalidateTag("platform-settings");
+  return { success: true, data: undefined };
+}

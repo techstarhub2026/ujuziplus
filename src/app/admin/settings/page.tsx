@@ -5,6 +5,8 @@ import { PLATFORM } from "@/lib/constants";
 import { getPlatformSettings } from "@/lib/actions/platform-settings";
 import { HomeBackgroundSetting } from "@/components/admin/HomeBackgroundSetting";
 import { ParticlesSetting } from "@/components/admin/ParticlesSetting";
+import { ClickPesaSetting } from "@/components/admin/ClickPesaSetting";
+import { FactoryResetSetting } from "@/components/admin/FactoryResetSetting";
 
 export const dynamic = "force-dynamic";
 
@@ -80,10 +82,42 @@ export default async function AdminSettingsPage() {
             <span>{process.env.FIREBASE_PROJECT_ID ? "Configured" : "Not configured"}</span>
           </li>
           <li className="flex justify-between">
-            <span className="text-gray-500">Payments</span>
-            <span>Sandbox mode (no live PSP)</span>
+            <span className="text-gray-500">Payments (ClickPesa)</span>
+            <span>
+              {settings.clickpesaClientId && settings.clickpesaApiKey
+                ? "Configured"
+                : "Not configured"}
+            </span>
           </li>
         </ul>
+      </Card>
+
+      <Card className="p-4 space-y-3 mb-4">
+        <h2 className="font-semibold text-sm">ClickPesa payments</h2>
+        <p className="text-xs text-gray-500">
+          Credentials for mobile money and card checkout. Stored here so they can be rotated
+          without a redeploy.
+        </p>
+        <ClickPesaSetting
+          hasClientId={Boolean(settings.clickpesaClientId)}
+          hasApiKey={Boolean(settings.clickpesaApiKey)}
+          hasWebhookSecret={Boolean(settings.clickpesaWebhookSecret)}
+        />
+      </Card>
+
+      <Card className="p-4 space-y-3 mb-4">
+        <h2 className="font-semibold text-sm">Your account</h2>
+        <p className="text-xs text-gray-500">
+          Change the password you use to sign in to this console.
+        </p>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/dashboard/settings/account">Change password</Link>
+        </Button>
+      </Card>
+
+      <Card className="p-4 space-y-3 mb-4 border-red-200">
+        <h2 className="font-semibold text-sm text-red-700">Danger zone</h2>
+        <FactoryResetSetting />
       </Card>
 
       <Card className="p-4">
