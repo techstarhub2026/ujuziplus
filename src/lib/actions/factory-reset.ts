@@ -18,14 +18,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth-server";
 import type { ActionResult } from "./courses";
-
-/** Typed by the operator to confirm. Deliberately awkward to produce by accident. */
-export const RESET_PHRASE = "ERASE ALL CONTENT";
-
-export interface FactoryResetInput {
-  password: string;
-  confirmation: string;
-}
+import { RESET_PHRASE, type FactoryResetInput } from "@/lib/factory-reset-constants";
 
 export async function factoryResetPlatform(
   input: FactoryResetInput

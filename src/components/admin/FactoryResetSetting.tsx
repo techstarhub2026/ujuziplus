@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { factoryResetPlatform, RESET_PHRASE } from "@/lib/actions/factory-reset";
+import { factoryResetPlatform } from "@/lib/actions/factory-reset";
+import { RESET_PHRASE } from "@/lib/factory-reset-constants";
 
 /**
  * Factory reset, behind three deliberate obstacles: the panel is collapsed
