@@ -35,12 +35,36 @@ export function ChatWidget() {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [draft, setDraft] = useState("");
   const [showOptions, setShowOptions] = useState(true);
+  const [idle, setIdle] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, open, showOptions]);
+
+  // While the panel is closed the launcher covers a fixed corner of every page.
+  // Fading it during scrolling keeps whatever is underneath readable, and it
+  // returns shortly after the reader settles.
+  useEffect(() => {
+    if (open) {
+      setIdle(true);
+      return;
+    }
+
+    let timer: number;
+    const onScroll = () => {
+      setIdle(false);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setIdle(true), 900);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.clearTimeout(timer);
+    };
+  }, [open]);
 
   const replyWithPlaceholder = () => {
     window.setTimeout(() => {
@@ -69,7 +93,7 @@ export function ChatWidget() {
   };
 
   return (
-    <div className="chat-widget" aria-live="polite">
+    <div className="chat-widget" aria-live="polite" data-idle={idle ? "true" : "false"}>
       {open && (
         <div className="chat-widget__panel" role="dialog" aria-label={`${PLATFORM.name} chat assistant`}>
           <div className="chat-widget__header">

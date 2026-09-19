@@ -4104,6 +4104,27 @@
     box-shadow: 0 12px 28px -8px rgb(243 146 35 / 0.55);
   }
 
+  /* The launcher sits above the page, so anything beneath it — a form's submit
+     button, the last row of a panel — is unreachable while it is opaque. It
+     steps aside while the reader scrolls and comes back when they stop, or as
+     soon as they reach for it. */
+  .chat-widget[data-idle="false"] .chat-widget__launcher {
+    opacity: 0.25;
+    transform: scale(0.85);
+  }
+
+  .chat-widget .chat-widget__launcher:hover,
+  .chat-widget .chat-widget__launcher:focus-visible {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-widget__launcher {
+      transition: none;
+    }
+  }
+
   /* ── Topbar back/forward nav buttons: single pill container, solid orange ── */
   .topbar-nav-group {
     background-color: #F39223;
