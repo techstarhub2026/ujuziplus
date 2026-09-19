@@ -4,7 +4,15 @@ import { PLATFORM } from "@/lib/constants";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? PLATFORM.url;
 
-/** Rebuilt hourly: new courses and posts should not wait a deploy to be found. */
+/**
+ * Built per request, then cached for an hour.
+ *
+ * `revalidate` alone let Next render this at build time, where there is no
+ * database — every query failed, and the first hour of the sitemap shipped
+ * with the static pages only and not one course. Forcing it dynamic means the
+ * first crawl gets the real list.
+ */
+export const dynamic = "force-dynamic";
 export const revalidate = 3600;
 
 const url = (path: string) => `${siteUrl}${path}`;
