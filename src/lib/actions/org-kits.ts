@@ -2,6 +2,7 @@
  * Organization kit inventory & procurement requests
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -67,53 +68,58 @@ export async function updateOrgKitRequestStatus(
   status: OrgKitRequestStatus,
   actorUserId: string
 ): Promise<ActionResult> {
-  const { user } = await requireUser();
-  if (user.id !== actorUserId) {
-    return { success: false, error: "Unauthorized." };
-  }
+  try {
+    const { user } = await requireUser();
+    if (user.id !== actorUserId) {
+      return { success: false, error: "Unauthorized." };
+    }
 
-  const access = await requireOrgMember(orgSlug, actorUserId, ["ADMIN"]);
-  if (!access.ok) return { success: false, error: access.error };
+    const access = await requireOrgMember(orgSlug, actorUserId, ["ADMIN"]);
+    if (!access.ok) return { success: false, error: access.error };
 
-  const org = await db.organization.findUnique({ where: { slug: orgSlug } });
-  if (!org) return { success: false, error: "Organization not found." };
+    const org = await db.organization.findUnique({ where: { slug: orgSlug } });
+    if (!org) return { success: false, error: "Organization not found." };
 
-  const req = await db.orgKitRequest.findFirst({
-    where: { id: requestId, orgId: org.id },
-    include: { kit: true, requester: true, org: true },
-  });
-  if (!req) return { success: false, error: "Request not found." };
-
-  await db.orgKitRequest.update({
-    where: { id: requestId },
-    data: { status },
-  });
-
-  if (status === "FULFILLED") {
-    await db.orgKitInventory.upsert({
-      where: { orgId_kitId: { orgId: org.id, kitId: req.kitId } },
-      create: {
-        orgId: org.id,
-        kitId: req.kitId,
-        quantityOnHand: req.quantity,
-        quantityAllocated: 0,
-      },
-      update: { quantityOnHand: { increment: req.quantity } },
+    const req = await db.orgKitRequest.findFirst({
+      where: { id: requestId, orgId: org.id },
+      include: { kit: true, requester: true, org: true },
     });
+    if (!req) return { success: false, error: "Request not found." };
+
+    await db.orgKitRequest.update({
+      where: { id: requestId },
+      data: { status },
+    });
+
+    if (status === "FULFILLED") {
+      await db.orgKitInventory.upsert({
+        where: { orgId_kitId: { orgId: org.id, kitId: req.kitId } },
+        create: {
+          orgId: org.id,
+          kitId: req.kitId,
+          quantityOnHand: req.quantity,
+          quantityAllocated: 0,
+        },
+        update: { quantityOnHand: { increment: req.quantity } },
+      });
+    }
+
+    const statusLabel = status.toLowerCase().replace("_", " ");
+    await createNotification(req.requesterId, {
+      type: "SYSTEM",
+      title: `Kit request ${statusLabel}`,
+      message: `Your request for ${req.quantity}× ${req.kit.title} at ${req.org.name} was ${statusLabel}.`,
+      href: `/org/${orgSlug}/kits`,
+      prefCategory: "Course updates",
+    });
+
+    revalidatePath(`/org/${orgSlug}/kits`);
+    revalidatePath("/admin/kit-requests");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("org-kits", e);
   }
-
-  const statusLabel = status.toLowerCase().replace("_", " ");
-  await createNotification(req.requesterId, {
-    type: "SYSTEM",
-    title: `Kit request ${statusLabel}`,
-    message: `Your request for ${req.quantity}× ${req.kit.title} at ${req.org.name} was ${statusLabel}.`,
-    href: `/org/${orgSlug}/kits`,
-    prefCategory: "Course updates",
-  });
-
-  revalidatePath(`/org/${orgSlug}/kits`);
-  revalidatePath("/admin/kit-requests");
-  return { success: true, data: undefined };
 }
 
 export async function removeOrgKitInventory(
@@ -121,18 +127,23 @@ export async function removeOrgKitInventory(
   inventoryId: string,
   actorUserId: string
 ): Promise<ActionResult> {
-  const access = await requireOrgMember(orgSlug, actorUserId, ["ADMIN"]);
-  if (!access.ok) return { success: false, error: access.error };
+  try {
+    const access = await requireOrgMember(orgSlug, actorUserId, ["ADMIN"]);
+    if (!access.ok) return { success: false, error: access.error };
 
-  const row = await db.orgKitInventory.findFirst({
-    where: { id: inventoryId, orgId: access.org.id },
-  });
-  if (!row) return { success: false, error: "Inventory row not found." };
+    const row = await db.orgKitInventory.findFirst({
+      where: { id: inventoryId, orgId: access.org.id },
+    });
+    if (!row) return { success: false, error: "Inventory row not found." };
 
-  await db.orgKitInventory.delete({ where: { id: inventoryId } });
+    await db.orgKitInventory.delete({ where: { id: inventoryId } });
 
-  revalidatePath(`/org/${orgSlug}/kits`);
-  return { success: true, data: undefined };
+    revalidatePath(`/org/${orgSlug}/kits`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("org-kits", e);
+  }
 }
 
 export async function adjustOrgKitInventory(
@@ -141,24 +152,29 @@ export async function adjustOrgKitInventory(
   patch: { quantityOnHand?: number; quantityAllocated?: number },
   actorUserId: string
 ): Promise<ActionResult> {
-  const access = await requireOrgMember(orgSlug, actorUserId, ["ADMIN"]);
-  if (!access.ok) return { success: false, error: access.error };
+  try {
+    const access = await requireOrgMember(orgSlug, actorUserId, ["ADMIN"]);
+    if (!access.ok) return { success: false, error: access.error };
 
-  const row = await db.orgKitInventory.findFirst({
-    where: { id: inventoryId, orgId: access.org.id },
-  });
-  if (!row) return { success: false, error: "Inventory row not found." };
+    const row = await db.orgKitInventory.findFirst({
+      where: { id: inventoryId, orgId: access.org.id },
+    });
+    if (!row) return { success: false, error: "Inventory row not found." };
 
-  await db.orgKitInventory.update({
-    where: { id: inventoryId },
-    data: {
-      quantityOnHand: patch.quantityOnHand ?? row.quantityOnHand,
-      quantityAllocated: patch.quantityAllocated ?? row.quantityAllocated,
-    },
-  });
+    await db.orgKitInventory.update({
+      where: { id: inventoryId },
+      data: {
+        quantityOnHand: patch.quantityOnHand ?? row.quantityOnHand,
+        quantityAllocated: patch.quantityAllocated ?? row.quantityAllocated,
+      },
+    });
 
-  revalidatePath(`/org/${orgSlug}/kits`);
-  return { success: true, data: undefined };
+    revalidatePath(`/org/${orgSlug}/kits`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("org-kits", e);
+  }
 }
 
 // ─── Platform admin: all pending requests ─────────────────────────────────────

@@ -2,6 +2,7 @@
  * Platform-wide settings (singleton row) — admin-managed site config.
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
@@ -45,35 +46,45 @@ export async function updateHomeSectionBackground(
   homeSectionBackgroundUrl: string | null,
   homeSectionBackgroundMode: HomeBackgroundMode = "tile"
 ): Promise<ActionResult> {
-  await requireAdmin();
+  try {
+    await requireAdmin();
 
-  await db.platformSettings.upsert({
-    where: { id: SETTINGS_ID },
-    update: { homeSectionBackgroundUrl, homeSectionBackgroundMode },
-    create: { id: SETTINGS_ID, homeSectionBackgroundUrl, homeSectionBackgroundMode },
-  });
+    await db.platformSettings.upsert({
+      where: { id: SETTINGS_ID },
+      update: { homeSectionBackgroundUrl, homeSectionBackgroundMode },
+      create: { id: SETTINGS_ID, homeSectionBackgroundUrl, homeSectionBackgroundMode },
+    });
 
-  revalidatePath("/");
-  revalidatePath("/admin/settings");
-  revalidateTag("platform-settings");
-  return { success: true, data: undefined };
+    revalidatePath("/");
+    revalidatePath("/admin/settings");
+    revalidateTag("platform-settings");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("platform-settings", e);
+  }
 }
 
 export async function updateParticlesSettings(
   input: ParticlesSettingsInput
 ): Promise<ActionResult> {
-  await requireAdmin();
+  try {
+    await requireAdmin();
 
-  await db.platformSettings.upsert({
-    where: { id: SETTINGS_ID },
-    update: { ...input },
-    create: { id: SETTINGS_ID, ...input },
-  });
+    await db.platformSettings.upsert({
+      where: { id: SETTINGS_ID },
+      update: { ...input },
+      create: { id: SETTINGS_ID, ...input },
+    });
 
-  revalidatePath("/");
-  revalidatePath("/admin/settings");
-  revalidateTag("platform-settings");
-  return { success: true, data: undefined };
+    revalidatePath("/");
+    revalidatePath("/admin/settings");
+    revalidateTag("platform-settings");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("platform-settings", e);
+  }
 }
 
 /**
@@ -93,24 +104,29 @@ export async function updateClickPesaCredentials(input: {
   apiKey: string;
   webhookSecret: string;
 }): Promise<ActionResult> {
-  await requireAdmin();
+  try {
+    await requireAdmin();
 
-  const data = {
-    clickpesaClientId: input.clientId.trim() || null,
-    clickpesaApiKey: input.apiKey.trim() || null,
-    clickpesaWebhookSecret: input.webhookSecret.trim() || null,
-  };
+    const data = {
+      clickpesaClientId: input.clientId.trim() || null,
+      clickpesaApiKey: input.apiKey.trim() || null,
+      clickpesaWebhookSecret: input.webhookSecret.trim() || null,
+    };
 
-  await db.platformSettings.upsert({
-    where: { id: SETTINGS_ID },
-    update: data,
-    create: { id: SETTINGS_ID, ...data },
-  });
+    await db.platformSettings.upsert({
+      where: { id: SETTINGS_ID },
+      update: data,
+      create: { id: SETTINGS_ID, ...data },
+    });
 
-  const { resetClickPesaToken } = await import("@/lib/clickpesa");
-  resetClickPesaToken();
+    const { resetClickPesaToken } = await import("@/lib/clickpesa");
+    resetClickPesaToken();
 
-  revalidatePath("/admin/settings");
-  revalidateTag("platform-settings");
-  return { success: true, data: undefined };
+    revalidatePath("/admin/settings");
+    revalidateTag("platform-settings");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("platform-settings", e);
+  }
 }

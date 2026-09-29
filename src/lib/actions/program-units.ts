@@ -4,6 +4,7 @@
  * no separate progress-tracking table.
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -40,63 +41,78 @@ export async function addProgramUnit(
   programId: string,
   courseId: string
 ): Promise<ActionResult<{ id: string }>> {
-  await assertProgramManager(programId);
+  try {
+    await assertProgramManager(programId);
 
-  const existing = await db.programUnit.findUnique({
-    where: { programId_courseId: { programId, courseId } },
-  });
-  if (existing) return { success: false, error: "This course is already a unit in the program." };
+    const existing = await db.programUnit.findUnique({
+      where: { programId_courseId: { programId, courseId } },
+    });
+    if (existing) return { success: false, error: "This course is already a unit in the program." };
 
-  const last = await db.programUnit.findFirst({
-    where: { programId },
-    orderBy: { orderIndex: "desc" },
-    select: { orderIndex: true },
-  });
+    const last = await db.programUnit.findFirst({
+      where: { programId },
+      orderBy: { orderIndex: "desc" },
+      select: { orderIndex: true },
+    });
 
-  const unit = await db.programUnit.create({
-    data: { programId, courseId, orderIndex: (last?.orderIndex ?? -1) + 1 },
-  });
+    const unit = await db.programUnit.create({
+      data: { programId, courseId, orderIndex: (last?.orderIndex ?? -1) + 1 },
+    });
 
-  revalidatePath(`/admin/programs/${programId}/edit`);
-  return { success: true, data: { id: unit.id } };
+    revalidatePath(`/admin/programs/${programId}/edit`);
+    return { success: true, data: { id: unit.id } };
+
+  } catch (e) {
+    return actionFailure("program-units", e);
+  }
 }
 
 export async function removeProgramUnit(unitId: string): Promise<ActionResult> {
-  const unit = await db.programUnit.findUnique({ where: { id: unitId } });
-  if (!unit) return { success: false, error: "Unit not found." };
-  await assertProgramManager(unit.programId);
+  try {
+    const unit = await db.programUnit.findUnique({ where: { id: unitId } });
+    if (!unit) return { success: false, error: "Unit not found." };
+    await assertProgramManager(unit.programId);
 
-  await db.programUnit.delete({ where: { id: unitId } });
-  revalidatePath(`/admin/programs/${unit.programId}/edit`);
-  return { success: true, data: undefined };
+    await db.programUnit.delete({ where: { id: unitId } });
+    revalidatePath(`/admin/programs/${unit.programId}/edit`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("program-units", e);
+  }
 }
 
 export async function reorderProgramUnit(
   unitId: string,
   direction: "up" | "down"
 ): Promise<ActionResult> {
-  const unit = await db.programUnit.findUnique({ where: { id: unitId } });
-  if (!unit) return { success: false, error: "Unit not found." };
-  await assertProgramManager(unit.programId);
+  try {
+    const unit = await db.programUnit.findUnique({ where: { id: unitId } });
+    if (!unit) return { success: false, error: "Unit not found." };
+    await assertProgramManager(unit.programId);
 
-  const siblings = await db.programUnit.findMany({
-    where: { programId: unit.programId },
-    orderBy: { orderIndex: "asc" },
-  });
-  const idx = siblings.findIndex((s) => s.id === unitId);
-  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-  if (swapIdx < 0 || swapIdx >= siblings.length) return { success: true, data: undefined };
+    const siblings = await db.programUnit.findMany({
+      where: { programId: unit.programId },
+      orderBy: { orderIndex: "asc" },
+    });
+    const idx = siblings.findIndex((s) => s.id === unitId);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= siblings.length) return { success: true, data: undefined };
 
-  const a = siblings[idx];
-  const b = siblings[swapIdx];
+    const a = siblings[idx];
+    const b = siblings[swapIdx];
 
-  await db.$transaction([
-    db.programUnit.update({ where: { id: a.id }, data: { orderIndex: b.orderIndex } }),
-    db.programUnit.update({ where: { id: b.id }, data: { orderIndex: a.orderIndex } }),
-  ]);
+    await db.$transaction([
+      db.programUnit.update({ where: { id: a.id }, data: { orderIndex: b.orderIndex } }),
+      db.programUnit.update({ where: { id: b.id }, data: { orderIndex: a.orderIndex } }),
+    ]);
 
-  revalidatePath(`/admin/programs/${unit.programId}/edit`);
-  return { success: true, data: undefined };
+    revalidatePath(`/admin/programs/${unit.programId}/edit`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("program-units", e);
+  }
 }
 
 export async function getAdminProgramUnits(programId: string) {

@@ -2,6 +2,7 @@
  * Marketing pricing plans (display only — not connected to billing)
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
@@ -40,29 +41,34 @@ export async function adminUpsertPricingPlan(input: {
   ctaLabel?: string;
   ctaHref?: string;
 }): Promise<ActionResult> {
-  await requireAdmin();
+  try {
+    await requireAdmin();
 
-  const data = {
-    slug: input.slug.trim(),
-    name: input.name.trim(),
-    price: input.price,
-    period: input.period?.trim() || null,
-    features: input.features,
-    isPopular: input.isPopular ?? false,
-    sortOrder: input.sortOrder ?? 0,
-    isActive: input.isActive ?? true,
-    ctaLabel: input.ctaLabel?.trim() || "Get started",
-    ctaHref: input.ctaHref?.trim() || null,
-  };
+    const data = {
+      slug: input.slug.trim(),
+      name: input.name.trim(),
+      price: input.price,
+      period: input.period?.trim() || null,
+      features: input.features,
+      isPopular: input.isPopular ?? false,
+      sortOrder: input.sortOrder ?? 0,
+      isActive: input.isActive ?? true,
+      ctaLabel: input.ctaLabel?.trim() || "Get started",
+      ctaHref: input.ctaHref?.trim() || null,
+    };
 
-  if (input.id) {
-    await db.pricingPlan.update({ where: { id: input.id }, data });
-  } else {
-    await db.pricingPlan.create({ data });
+    if (input.id) {
+      await db.pricingPlan.update({ where: { id: input.id }, data });
+    } else {
+      await db.pricingPlan.create({ data });
+    }
+
+    revalidatePath("/admin/content");
+    revalidatePath("/pricing");
+    revalidateTag("active-pricing-plans");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("pricing", e);
   }
-
-  revalidatePath("/admin/content");
-  revalidatePath("/pricing");
-  revalidateTag("active-pricing-plans");
-  return { success: true, data: undefined };
 }

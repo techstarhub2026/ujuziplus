@@ -5,6 +5,7 @@
  * manuals, distinct from the hardware-focused Lab Resources catalog.
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
@@ -69,47 +70,57 @@ export async function adminUpsertOpenKnowledgeResource(input: {
   tags?: string[];
   isFeatured?: boolean;
 }): Promise<ActionResult<{ slug: string }>> {
-  await requireAdmin();
+  try {
+    await requireAdmin();
 
-  const data = {
-    slug: input.slug.trim(),
-    title: input.title.trim(),
-    description: input.description?.trim() || null,
-    category: input.category,
-    authorName: input.authorName?.trim() || null,
-    fileUrl: input.fileUrl?.trim() || null,
-    externalUrl: input.externalUrl?.trim() || null,
-    thumbnailUrl: input.thumbnailUrl ?? null,
-    tags: input.tags ?? [],
-    isFeatured: input.isFeatured ?? false,
-  };
+    const data = {
+      slug: input.slug.trim(),
+      title: input.title.trim(),
+      description: input.description?.trim() || null,
+      category: input.category,
+      authorName: input.authorName?.trim() || null,
+      fileUrl: input.fileUrl?.trim() || null,
+      externalUrl: input.externalUrl?.trim() || null,
+      thumbnailUrl: input.thumbnailUrl ?? null,
+      tags: input.tags ?? [],
+      isFeatured: input.isFeatured ?? false,
+    };
 
-  if (input.id) {
-    await db.openKnowledgeResource.update({ where: { id: input.id }, data });
-  } else {
-    await db.openKnowledgeResource.create({ data });
+    if (input.id) {
+      await db.openKnowledgeResource.update({ where: { id: input.id }, data });
+    } else {
+      await db.openKnowledgeResource.create({ data });
+    }
+
+    revalidatePath("/admin/content");
+    revalidatePath("/open-knowledge");
+    revalidatePath(`/open-knowledge/${data.slug}`);
+    revalidateTag("open-knowledge-resources");
+    return { success: true, data: { slug: data.slug } };
+
+  } catch (e) {
+    return actionFailure("open-knowledge", e);
   }
-
-  revalidatePath("/admin/content");
-  revalidatePath("/open-knowledge");
-  revalidatePath(`/open-knowledge/${data.slug}`);
-  revalidateTag("open-knowledge-resources");
-  return { success: true, data: { slug: data.slug } };
 }
 
 export async function adminDeleteOpenKnowledgeResource(id: string): Promise<ActionResult> {
-  await requireAdmin();
-
-  let resource;
   try {
-    resource = await db.openKnowledgeResource.delete({ where: { id } });
-  } catch {
-    return { success: false, error: "Not found." };
-  }
+    await requireAdmin();
 
-  revalidatePath("/admin/content");
-  revalidatePath("/open-knowledge");
-  revalidatePath(`/open-knowledge/${resource.slug}`);
-  revalidateTag("open-knowledge-resources");
-  return { success: true, data: undefined };
+    let resource;
+    try {
+      resource = await db.openKnowledgeResource.delete({ where: { id } });
+    } catch {
+      return { success: false, error: "Not found." };
+    }
+
+    revalidatePath("/admin/content");
+    revalidatePath("/open-knowledge");
+    revalidatePath(`/open-knowledge/${resource.slug}`);
+    revalidateTag("open-knowledge-resources");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("open-knowledge", e);
+  }
 }

@@ -2,6 +2,7 @@
  * Assignment server actions — instructions, submissions, grading
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -36,33 +37,38 @@ export async function saveAssignment(
   instructorId: string,
   input: AssignmentInput
 ): Promise<ActionResult<{ assignmentId: string }>> {
-  await requireInstructor();
-  const lesson = await db.lesson.findFirst({
-    where: { id: lessonId, module: { course: { instructorId } } },
-    select: { id: true, type: true },
-  });
-  if (!lesson || lesson.type !== "ASSIGNMENT") {
-    return { success: false, error: "Lesson not found or not an assignment." };
+  try {
+    await requireInstructor();
+    const lesson = await db.lesson.findFirst({
+      where: { id: lessonId, module: { course: { instructorId } } },
+      select: { id: true, type: true },
+    });
+    if (!lesson || lesson.type !== "ASSIGNMENT") {
+      return { success: false, error: "Lesson not found or not an assignment." };
+    }
+
+    const assignment = await db.assignment.upsert({
+      where: { lessonId },
+      create: {
+        lessonId,
+        instructions: input.instructions.trim(),
+        rubric: input.rubric,
+        maxScore: input.maxScore,
+        dueAt: input.dueAt ? new Date(input.dueAt) : null,
+      },
+      update: {
+        instructions: input.instructions.trim(),
+        rubric: input.rubric,
+        maxScore: input.maxScore,
+        dueAt: input.dueAt ? new Date(input.dueAt) : null,
+      },
+    });
+
+    return { success: true, data: { assignmentId: assignment.id } };
+
+  } catch (e) {
+    return actionFailure("assignments", e);
   }
-
-  const assignment = await db.assignment.upsert({
-    where: { lessonId },
-    create: {
-      lessonId,
-      instructions: input.instructions.trim(),
-      rubric: input.rubric,
-      maxScore: input.maxScore,
-      dueAt: input.dueAt ? new Date(input.dueAt) : null,
-    },
-    update: {
-      instructions: input.instructions.trim(),
-      rubric: input.rubric,
-      maxScore: input.maxScore,
-      dueAt: input.dueAt ? new Date(input.dueAt) : null,
-    },
-  });
-
-  return { success: true, data: { assignmentId: assignment.id } };
 }
 
 // ─── Student: submission ──────────────────────────────────────────────────────
@@ -104,54 +110,59 @@ export async function saveAssignmentDraft(
   userId: string,
   data: { textResponse?: string; githubUrl?: string; filePaths?: { fileName: string; filePath: string; mimeType?: string; sizeBytes?: number }[] }
 ): Promise<ActionResult<{ submissionId: string }>> {
-  const { user } = await requireUser();
-  assertSelfOrAdmin(user.id, userId, user.role);
+  try {
+    const { user } = await requireUser();
+    assertSelfOrAdmin(user.id, userId, user.role);
 
-  const assignment = await db.assignment.findUnique({ where: { lessonId } });
-  if (!assignment) return { success: false, error: "Assignment not configured." };
+    const assignment = await db.assignment.findUnique({ where: { lessonId } });
+    if (!assignment) return { success: false, error: "Assignment not configured." };
 
-  const existing = await db.assignmentSubmission.findUnique({
-    where: {
-      assignmentId_enrollmentId: { assignmentId: assignment.id, enrollmentId },
-    },
-  });
+    const existing = await db.assignmentSubmission.findUnique({
+      where: {
+        assignmentId_enrollmentId: { assignmentId: assignment.id, enrollmentId },
+      },
+    });
 
-  const submission = await db.assignmentSubmission.upsert({
-    where: {
-      assignmentId_enrollmentId: {
+    const submission = await db.assignmentSubmission.upsert({
+      where: {
+        assignmentId_enrollmentId: {
+          assignmentId: assignment.id,
+          enrollmentId,
+        },
+      },
+      create: {
         assignmentId: assignment.id,
         enrollmentId,
+        userId,
+        status: "DRAFT",
+        textResponse: data.textResponse?.trim() ?? null,
+        githubUrl: data.githubUrl?.trim() || null,
       },
-    },
-    create: {
-      assignmentId: assignment.id,
-      enrollmentId,
-      userId,
-      status: "DRAFT",
-      textResponse: data.textResponse?.trim() ?? null,
-      githubUrl: data.githubUrl?.trim() || null,
-    },
-    update: {
-      textResponse: data.textResponse?.trim() ?? null,
-      githubUrl: data.githubUrl?.trim() || null,
-      ...(existing?.status === "REVISION_REQUESTED" ? { status: "DRAFT" as const } : {}),
-    },
-  });
-
-  if (data.filePaths?.length) {
-    await db.assignmentSubmissionFile.deleteMany({ where: { submissionId: submission.id } });
-    await db.assignmentSubmissionFile.createMany({
-      data: data.filePaths.map((f) => ({
-        submissionId: submission.id,
-        fileName: f.fileName,
-        filePath: f.filePath,
-        mimeType: f.mimeType,
-        sizeBytes: f.sizeBytes,
-      })),
+      update: {
+        textResponse: data.textResponse?.trim() ?? null,
+        githubUrl: data.githubUrl?.trim() || null,
+        ...(existing?.status === "REVISION_REQUESTED" ? { status: "DRAFT" as const } : {}),
+      },
     });
-  }
 
-  return { success: true, data: { submissionId: submission.id } };
+    if (data.filePaths?.length) {
+      await db.assignmentSubmissionFile.deleteMany({ where: { submissionId: submission.id } });
+      await db.assignmentSubmissionFile.createMany({
+        data: data.filePaths.map((f) => ({
+          submissionId: submission.id,
+          fileName: f.fileName,
+          filePath: f.filePath,
+          mimeType: f.mimeType,
+          sizeBytes: f.sizeBytes,
+        })),
+      });
+    }
+
+    return { success: true, data: { submissionId: submission.id } };
+
+  } catch (e) {
+    return actionFailure("assignments", e);
+  }
 }
 
 export async function submitAssignment(
@@ -160,57 +171,62 @@ export async function submitAssignment(
   userId: string,
   courseId: string
 ): Promise<ActionResult> {
-  const { user } = await requireUser();
-  assertSelfOrAdmin(user.id, userId, user.role);
+  try {
+    const { user } = await requireUser();
+    assertSelfOrAdmin(user.id, userId, user.role);
 
-  const assignment = await db.assignment.findUnique({ where: { lessonId } });
-  if (!assignment) return { success: false, error: "Assignment not found." };
+    const assignment = await db.assignment.findUnique({ where: { lessonId } });
+    if (!assignment) return { success: false, error: "Assignment not found." };
 
-  const submission = await db.assignmentSubmission.findUnique({
-    where: {
-      assignmentId_enrollmentId: {
-        assignmentId: assignment.id,
-        enrollmentId,
+    const submission = await db.assignmentSubmission.findUnique({
+      where: {
+        assignmentId_enrollmentId: {
+          assignmentId: assignment.id,
+          enrollmentId,
+        },
       },
-    },
-    include: { files: true },
-  });
-
-  if (!submission) {
-    return { success: false, error: "Save a draft before submitting." };
-  }
-  if (!submission.textResponse?.trim() && submission.files.length === 0) {
-    return { success: false, error: "Add a written response or upload at least one file." };
-  }
-
-  await db.assignmentSubmission.update({
-    where: { id: submission.id },
-    data: { status: "SUBMITTED", submittedAt: new Date() },
-  });
-
-  const lesson = await db.lesson.findUnique({
-    where: { id: lessonId },
-    select: { module: { select: { course: { select: { instructorId: true, title: true } } } } },
-  });
-  if (lesson) {
-    const student = await db.user.findUnique({
-      where: { id: userId },
-      select: { fullName: true },
+      include: { files: true },
     });
-    await createNotification(lesson.module.course.instructorId, {
-      type: "ASSIGNMENT_SUBMITTED",
-      title: "New assignment submission",
-      message: `${student?.fullName ?? "A student"} submitted work in "${lesson.module.course.title}".`,
-      href: `/instructor/assignments/grade/${submission.id}`,
+
+    if (!submission) {
+      return { success: false, error: "Save a draft before submitting." };
+    }
+    if (!submission.textResponse?.trim() && submission.files.length === 0) {
+      return { success: false, error: "Add a written response or upload at least one file." };
+    }
+
+    await db.assignmentSubmission.update({
+      where: { id: submission.id },
+      data: { status: "SUBMITTED", submittedAt: new Date() },
     });
+
+    const lesson = await db.lesson.findUnique({
+      where: { id: lessonId },
+      select: { module: { select: { course: { select: { instructorId: true, title: true } } } } },
+    });
+    if (lesson) {
+      const student = await db.user.findUnique({
+        where: { id: userId },
+        select: { fullName: true },
+      });
+      await createNotification(lesson.module.course.instructorId, {
+        type: "ASSIGNMENT_SUBMITTED",
+        title: "New assignment submission",
+        message: `${student?.fullName ?? "A student"} submitted work in "${lesson.module.course.title}".`,
+        href: `/instructor/assignments/grade/${submission.id}`,
+      });
+    }
+
+    await markLessonComplete(userId, courseId, lessonId);
+
+    revalidatePath(`/learn`);
+    revalidatePath("/dashboard/notifications");
+    revalidatePath("/instructor/assignments");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("assignments", e);
   }
-
-  await markLessonComplete(userId, courseId, lessonId);
-
-  revalidatePath(`/learn`);
-  revalidatePath("/dashboard/notifications");
-  revalidatePath("/instructor/assignments");
-  return { success: true, data: undefined };
 }
 
 // ─── Instructor: grading queue ────────────────────────────────────────────────
@@ -278,72 +294,77 @@ export async function gradeSubmission(
   instructorId: string,
   data: { score: number; feedback: string; requestRevision?: boolean }
 ): Promise<ActionResult> {
-  await requireInstructor();
+  try {
+    await requireInstructor();
 
-  const submission = await db.assignmentSubmission.findFirst({
-    where: {
-      id: submissionId,
-      assignment: { lesson: { module: { course: { instructorId } } } },
-    },
-    include: {
-      assignment: {
-        include: {
-          lesson: {
-            select: {
-              id: true,
-              slug: true,
-              module: { select: { course: { select: { id: true, slug: true, title: true } } } },
+    const submission = await db.assignmentSubmission.findFirst({
+      where: {
+        id: submissionId,
+        assignment: { lesson: { module: { course: { instructorId } } } },
+      },
+      include: {
+        assignment: {
+          include: {
+            lesson: {
+              select: {
+                id: true,
+                slug: true,
+                module: { select: { course: { select: { id: true, slug: true, title: true } } } },
+              },
             },
           },
         },
+        user: { select: { id: true } },
+        enrollment: { select: { id: true } },
       },
-      user: { select: { id: true } },
-      enrollment: { select: { id: true } },
-    },
-  });
-  if (!submission) return { success: false, error: "Submission not found." };
-
-  const course = submission.assignment.lesson.module.course;
-  const lessonId = submission.assignment.lesson.id;
-
-  const max = submission.assignment.maxScore;
-  if (data.score < 0 || data.score > max) {
-    return { success: false, error: `Score must be between 0 and ${max}.` };
-  }
-
-  const status: AssignmentSubmissionStatus = data.requestRevision
-    ? "REVISION_REQUESTED"
-    : "GRADED";
-
-  await db.assignmentSubmission.update({
-    where: { id: submissionId },
-    data: {
-      status,
-      score: data.score,
-      feedback: data.feedback.trim(),
-      gradedAt: new Date(),
-      gradedById: instructorId,
-    },
-  });
-
-  if (!data.requestRevision) {
-    await markLessonComplete(submission.user.id, course.id, lessonId);
-    await createNotification(submission.user.id, {
-      type: "ASSIGNMENT_GRADED",
-      title: "Assignment graded",
-      message: `Your assignment was graded: ${data.score}/${max}.`,
-      href: `/learn/${course.slug}/${submission.assignment.lesson.slug}`,
     });
-  } else {
-    await createNotification(submission.user.id, {
-      type: "ASSIGNMENT_REVISION_REQUESTED",
-      title: "Revision requested",
-      message: data.feedback.trim() || "Please revise and resubmit your assignment.",
-      href: `/learn/${course.slug}/${submission.assignment.lesson.slug}`,
-    });
-  }
+    if (!submission) return { success: false, error: "Submission not found." };
 
-  revalidatePath("/instructor/assignments");
-  revalidatePath("/dashboard/notifications");
-  return { success: true, data: undefined };
+    const course = submission.assignment.lesson.module.course;
+    const lessonId = submission.assignment.lesson.id;
+
+    const max = submission.assignment.maxScore;
+    if (data.score < 0 || data.score > max) {
+      return { success: false, error: `Score must be between 0 and ${max}.` };
+    }
+
+    const status: AssignmentSubmissionStatus = data.requestRevision
+      ? "REVISION_REQUESTED"
+      : "GRADED";
+
+    await db.assignmentSubmission.update({
+      where: { id: submissionId },
+      data: {
+        status,
+        score: data.score,
+        feedback: data.feedback.trim(),
+        gradedAt: new Date(),
+        gradedById: instructorId,
+      },
+    });
+
+    if (!data.requestRevision) {
+      await markLessonComplete(submission.user.id, course.id, lessonId);
+      await createNotification(submission.user.id, {
+        type: "ASSIGNMENT_GRADED",
+        title: "Assignment graded",
+        message: `Your assignment was graded: ${data.score}/${max}.`,
+        href: `/learn/${course.slug}/${submission.assignment.lesson.slug}`,
+      });
+    } else {
+      await createNotification(submission.user.id, {
+        type: "ASSIGNMENT_REVISION_REQUESTED",
+        title: "Revision requested",
+        message: data.feedback.trim() || "Please revise and resubmit your assignment.",
+        href: `/learn/${course.slug}/${submission.assignment.lesson.slug}`,
+      });
+    }
+
+    revalidatePath("/instructor/assignments");
+    revalidatePath("/dashboard/notifications");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("assignments", e);
+  }
 }

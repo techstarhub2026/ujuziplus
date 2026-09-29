@@ -2,6 +2,7 @@
  * Learning kits — admin CRUD
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
@@ -137,83 +138,12 @@ export type KitSaveInput = {
 };
 
 export async function createKit(input: KitSaveInput): Promise<ActionResult<{ kitId: string }>> {
-  await requireAdmin();
-  if (!input.title.trim()) return { success: false, error: "Title is required." };
+  try {
+    await requireAdmin();
+    if (!input.title.trim()) return { success: false, error: "Title is required." };
 
-  const slug = await uniqueKitSlug(input.title);
-  const kit = await db.kit.create({
-    data: {
-      slug,
-      title: input.title.trim(),
-      subtitle: input.subtitle?.trim() ?? null,
-      description: input.description?.trim() ?? null,
-      thumbnailUrl: input.thumbnailUrl ?? null,
-      category: input.category ?? null,
-      difficulty: input.difficulty,
-      ageRange: input.ageRange ?? null,
-      price: input.isFree ? 0 : input.price,
-      isFree: input.isFree,
-      status: input.status,
-      learningOutcomes: input.learningOutcomes.filter(Boolean),
-      projectIdeas: input.projectIdeas.filter(Boolean),
-      relatedCourseSlugs: input.relatedCourseSlugs,
-      inventoryCount: input.inventoryCount,
-      components: {
-        create: input.components.map((c, i) => ({
-          name: c.name,
-          quantity: c.quantity,
-          description: c.description ?? null,
-          imageUrl: c.imageUrl ?? null,
-          orderIndex: i,
-        })),
-      },
-      materials: {
-        create: input.materials.map((m, i) => ({
-          title: m.title,
-          type: m.type,
-          description: m.description ?? null,
-          url: m.url ?? null,
-          durationMinutes: m.durationMinutes ?? null,
-          orderIndex: i,
-        })),
-      },
-      gallery: {
-        create: input.gallery.map((g, i) => ({
-          url: g.url,
-          caption: g.caption ?? null,
-          isPrimary: g.isPrimary ?? i === 0,
-          orderIndex: i,
-        })),
-      },
-    },
-  });
-
-  revalidatePath("/admin/kits");
-  revalidateKitCatalog(kit.slug);
-  return { success: true, data: { kitId: kit.id } };
-}
-
-export async function updateKit(
-  kitId: string,
-  input: KitSaveInput
-): Promise<ActionResult> {
-  await requireAdmin();
-  if (!input.title.trim()) return { success: false, error: "Title is required." };
-
-  const existing = await db.kit.findUnique({ where: { id: kitId } });
-  if (!existing) return { success: false, error: "Kit not found." };
-
-  const slug =
-    slugify(input.title) === existing.slug
-      ? existing.slug
-      : await uniqueKitSlug(input.title, kitId);
-
-  await db.$transaction([
-    db.kitComponent.deleteMany({ where: { kitId } }),
-    db.kitMaterial.deleteMany({ where: { kitId } }),
-    db.kitGalleryImage.deleteMany({ where: { kitId } }),
-    db.kit.update({
-      where: { id: kitId },
+    const slug = await uniqueKitSlug(input.title);
+    const kit = await db.kit.create({
       data: {
         slug,
         title: input.title.trim(),
@@ -258,20 +188,106 @@ export async function updateKit(
           })),
         },
       },
-    }),
-  ]);
+    });
 
-  revalidatePath("/admin/kits");
-  revalidatePath(`/admin/kits/${kitId}/edit`);
-  revalidateKitCatalog(slug);
-  return { success: true, data: undefined };
+    revalidatePath("/admin/kits");
+    revalidateKitCatalog(kit.slug);
+    return { success: true, data: { kitId: kit.id } };
+
+  } catch (e) {
+    return actionFailure("kits", e);
+  }
+}
+
+export async function updateKit(
+  kitId: string,
+  input: KitSaveInput
+): Promise<ActionResult> {
+  try {
+    await requireAdmin();
+    if (!input.title.trim()) return { success: false, error: "Title is required." };
+
+    const existing = await db.kit.findUnique({ where: { id: kitId } });
+    if (!existing) return { success: false, error: "Kit not found." };
+
+    const slug =
+      slugify(input.title) === existing.slug
+        ? existing.slug
+        : await uniqueKitSlug(input.title, kitId);
+
+    await db.$transaction([
+      db.kitComponent.deleteMany({ where: { kitId } }),
+      db.kitMaterial.deleteMany({ where: { kitId } }),
+      db.kitGalleryImage.deleteMany({ where: { kitId } }),
+      db.kit.update({
+        where: { id: kitId },
+        data: {
+          slug,
+          title: input.title.trim(),
+          subtitle: input.subtitle?.trim() ?? null,
+          description: input.description?.trim() ?? null,
+          thumbnailUrl: input.thumbnailUrl ?? null,
+          category: input.category ?? null,
+          difficulty: input.difficulty,
+          ageRange: input.ageRange ?? null,
+          price: input.isFree ? 0 : input.price,
+          isFree: input.isFree,
+          status: input.status,
+          learningOutcomes: input.learningOutcomes.filter(Boolean),
+          projectIdeas: input.projectIdeas.filter(Boolean),
+          relatedCourseSlugs: input.relatedCourseSlugs,
+          inventoryCount: input.inventoryCount,
+          components: {
+            create: input.components.map((c, i) => ({
+              name: c.name,
+              quantity: c.quantity,
+              description: c.description ?? null,
+              imageUrl: c.imageUrl ?? null,
+              orderIndex: i,
+            })),
+          },
+          materials: {
+            create: input.materials.map((m, i) => ({
+              title: m.title,
+              type: m.type,
+              description: m.description ?? null,
+              url: m.url ?? null,
+              durationMinutes: m.durationMinutes ?? null,
+              orderIndex: i,
+            })),
+          },
+          gallery: {
+            create: input.gallery.map((g, i) => ({
+              url: g.url,
+              caption: g.caption ?? null,
+              isPrimary: g.isPrimary ?? i === 0,
+              orderIndex: i,
+            })),
+          },
+        },
+      }),
+    ]);
+
+    revalidatePath("/admin/kits");
+    revalidatePath(`/admin/kits/${kitId}/edit`);
+    revalidateKitCatalog(slug);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("kits", e);
+  }
 }
 
 export async function deleteKit(kitId: string): Promise<ActionResult> {
-  await requireAdmin();
-  const kit = await db.kit.findUnique({ where: { id: kitId }, select: { slug: true } });
-  await db.kit.delete({ where: { id: kitId } });
-  revalidatePath("/admin/kits");
-  if (kit) revalidateKitCatalog(kit.slug);
-  return { success: true, data: undefined };
+  try {
+    await requireAdmin();
+    const kit = await db.kit.findUnique({ where: { id: kitId }, select: { slug: true } });
+    await db.kit.delete({ where: { id: kitId } });
+    revalidatePath("/admin/kits");
+    if (kit) revalidateKitCatalog(kit.slug);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("kits", e);
+  }
 }

@@ -2,6 +2,7 @@
  * Organization members & email invites
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
@@ -59,64 +60,69 @@ export async function inviteOrgMember(
   orgSlug: string,
   input: { email: string; role: OrgMemberRole }
 ): Promise<ActionResult> {
-  const { user } = await requireUser();
-  if (user.id !== actorUserId && user.role !== "ADMIN") {
-    return { success: false, error: "Unauthorized." };
-  }
+  try {
+    const { user } = await requireUser();
+    if (user.id !== actorUserId && user.role !== "ADMIN") {
+      return { success: false, error: "Unauthorized." };
+    }
 
-  const access = await requireOrgAdmin(orgSlug, actorUserId);
-  if (!access.ok) return { success: false, error: access.error };
+    const access = await requireOrgAdmin(orgSlug, actorUserId);
+    if (!access.ok) return { success: false, error: access.error };
 
-  const email = input.email.toLowerCase().trim();
-  if (!email.includes("@")) return { success: false, error: "Enter a valid email." };
+    const email = input.email.toLowerCase().trim();
+    if (!email.includes("@")) return { success: false, error: "Enter a valid email." };
 
-  const existingUser = await db.user.findUnique({ where: { email } });
-  if (existingUser) {
-    const member = await db.organizationMember.findUnique({
-      where: { orgId_userId: { orgId: access.org.id, userId: existingUser.id } },
+    const existingUser = await db.user.findUnique({ where: { email } });
+    if (existingUser) {
+      const member = await db.organizationMember.findUnique({
+        where: { orgId_userId: { orgId: access.org.id, userId: existingUser.id } },
+      });
+      if (member) return { success: false, error: "This user is already a member." };
+    }
+
+    const pending = await db.orgInvite.findFirst({
+      where: { orgId: access.org.id, email, status: "PENDING", expiresAt: { gt: new Date() } },
     });
-    if (member) return { success: false, error: "This user is already a member." };
+    if (pending) return { success: false, error: "An invite is already pending for this email." };
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + INVITE_DAYS);
+
+    const invite = await db.orgInvite.create({
+      data: {
+        orgId: access.org.id,
+        email,
+        role: input.role,
+        token: inviteToken(),
+        invitedById: actorUserId,
+        expiresAt,
+      },
+    });
+
+    const base = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+    const acceptUrl = `${base}/invite/org/${invite.token}`;
+
+    const emailResult = await sendEmail({
+      to: email,
+      subject: `Invitation to join ${access.org.name} on UjuziLab`,
+      html: orgInviteEmail({
+        orgName: access.org.name,
+        inviterName: user.fullName,
+        role: input.role.toLowerCase(),
+        acceptUrl,
+        expiresAt: expiresAt.toLocaleDateString("en-TZ"),
+      }),
+    });
+    if (!emailResult.ok) {
+      console.error("Org invite email failed:", emailResult.error);
+    }
+
+    revalidatePath(`/org/${orgSlug}/members`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("org-members", e);
   }
-
-  const pending = await db.orgInvite.findFirst({
-    where: { orgId: access.org.id, email, status: "PENDING", expiresAt: { gt: new Date() } },
-  });
-  if (pending) return { success: false, error: "An invite is already pending for this email." };
-
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + INVITE_DAYS);
-
-  const invite = await db.orgInvite.create({
-    data: {
-      orgId: access.org.id,
-      email,
-      role: input.role,
-      token: inviteToken(),
-      invitedById: actorUserId,
-      expiresAt,
-    },
-  });
-
-  const base = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-  const acceptUrl = `${base}/invite/org/${invite.token}`;
-
-  const emailResult = await sendEmail({
-    to: email,
-    subject: `Invitation to join ${access.org.name} on UjuziLab`,
-    html: orgInviteEmail({
-      orgName: access.org.name,
-      inviterName: user.fullName,
-      role: input.role.toLowerCase(),
-      acceptUrl,
-      expiresAt: expiresAt.toLocaleDateString("en-TZ"),
-    }),
-  });
-  if (!emailResult.ok) {
-    console.error("Org invite email failed:", emailResult.error);
-  }
-
-  revalidatePath(`/org/${orgSlug}/members`);
-  return { success: true, data: undefined };
 }
 
 export async function revokeOrgInvite(
@@ -124,16 +130,21 @@ export async function revokeOrgInvite(
   orgSlug: string,
   inviteId: string
 ): Promise<ActionResult> {
-  const access = await requireOrgAdmin(orgSlug, actorUserId);
-  if (!access.ok) return { success: false, error: access.error };
+  try {
+    const access = await requireOrgAdmin(orgSlug, actorUserId);
+    if (!access.ok) return { success: false, error: access.error };
 
-  await db.orgInvite.updateMany({
-    where: { id: inviteId, orgId: access.org.id, status: "PENDING" },
-    data: { status: "REVOKED" },
-  });
+    await db.orgInvite.updateMany({
+      where: { id: inviteId, orgId: access.org.id, status: "PENDING" },
+      data: { status: "REVOKED" },
+    });
 
-  revalidatePath(`/org/${orgSlug}/members`);
-  return { success: true, data: undefined };
+    revalidatePath(`/org/${orgSlug}/members`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("org-members", e);
+  }
 }
 
 export async function getOrgInviteByToken(token: string) {
@@ -156,43 +167,48 @@ export async function acceptOrgInvite(
   userId: string,
   token: string
 ): Promise<ActionResult<{ orgSlug: string }>> {
-  const { user } = await requireUser();
-  if (user.id !== userId) return { success: false, error: "Unauthorized." };
+  try {
+    const { user } = await requireUser();
+    if (user.id !== userId) return { success: false, error: "Unauthorized." };
 
-  const invite = await getOrgInviteByToken(token);
-  if (!invite) return { success: false, error: "Invite is invalid or expired." };
+    const invite = await getOrgInviteByToken(token);
+    if (!invite) return { success: false, error: "Invite is invalid or expired." };
 
-  if (user.email.toLowerCase() !== invite.email.toLowerCase()) {
-    return {
-      success: false,
-      error: `Sign in as ${invite.email} to accept this invitation.`,
-    };
+    if (user.email.toLowerCase() !== invite.email.toLowerCase()) {
+      return {
+        success: false,
+        error: `Sign in as ${invite.email} to accept this invitation.`,
+      };
+    }
+
+    await db.$transaction([
+      db.organizationMember.create({
+        data: { orgId: invite.orgId, userId, role: invite.role },
+      }),
+      db.orgInvite.update({
+        where: { id: invite.id },
+        data: { status: "ACCEPTED", acceptedAt: new Date() },
+      }),
+      db.organization.update({
+        where: { id: invite.orgId },
+        data: { memberCount: { increment: 1 } },
+      }),
+    ]);
+
+    await createNotification(userId, {
+      type: "SYSTEM",
+      title: `Welcome to ${invite.org.name}`,
+      message: `You joined ${invite.org.name} as ${invite.role.toLowerCase()}.`,
+      href: `/org/${invite.org.slug}/dashboard`,
+      prefCategory: "Enrollment confirmations",
+    });
+
+    revalidatePath(`/org/${invite.org.slug}/members`);
+    return { success: true, data: { orgSlug: invite.org.slug } };
+
+  } catch (e) {
+    return actionFailure("org-members", e);
   }
-
-  await db.$transaction([
-    db.organizationMember.create({
-      data: { orgId: invite.orgId, userId, role: invite.role },
-    }),
-    db.orgInvite.update({
-      where: { id: invite.id },
-      data: { status: "ACCEPTED", acceptedAt: new Date() },
-    }),
-    db.organization.update({
-      where: { id: invite.orgId },
-      data: { memberCount: { increment: 1 } },
-    }),
-  ]);
-
-  await createNotification(userId, {
-    type: "SYSTEM",
-    title: `Welcome to ${invite.org.name}`,
-    message: `You joined ${invite.org.name} as ${invite.role.toLowerCase()}.`,
-    href: `/org/${invite.org.slug}/dashboard`,
-    prefCategory: "Enrollment confirmations",
-  });
-
-  revalidatePath(`/org/${invite.org.slug}/members`);
-  return { success: true, data: { orgSlug: invite.org.slug } };
 }
 
 export async function removeOrgMember(
@@ -200,25 +216,30 @@ export async function removeOrgMember(
   orgSlug: string,
   memberUserId: string
 ): Promise<ActionResult> {
-  const access = await requireOrgAdmin(orgSlug, actorUserId);
-  if (!access.ok) return { success: false, error: access.error };
+  try {
+    const access = await requireOrgAdmin(orgSlug, actorUserId);
+    if (!access.ok) return { success: false, error: access.error };
 
-  if (memberUserId === actorUserId) {
-    return { success: false, error: "You cannot remove yourself." };
+    if (memberUserId === actorUserId) {
+      return { success: false, error: "You cannot remove yourself." };
+    }
+
+    const deleted = await db.organizationMember.deleteMany({
+      where: { orgId: access.org.id, userId: memberUserId },
+    });
+    if (deleted.count === 0) return { success: false, error: "Member not found." };
+
+    await db.organization.update({
+      where: { id: access.org.id },
+      data: { memberCount: { decrement: 1 } },
+    });
+
+    revalidatePath(`/org/${orgSlug}/members`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("org-members", e);
   }
-
-  const deleted = await db.organizationMember.deleteMany({
-    where: { orgId: access.org.id, userId: memberUserId },
-  });
-  if (deleted.count === 0) return { success: false, error: "Member not found." };
-
-  await db.organization.update({
-    where: { id: access.org.id },
-    data: { memberCount: { decrement: 1 } },
-  });
-
-  revalidatePath(`/org/${orgSlug}/members`);
-  return { success: true, data: undefined };
 }
 
 const ROLE_MAP: Record<string, OrgMemberRole> = {

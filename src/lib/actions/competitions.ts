@@ -2,6 +2,7 @@
  * Competitions & hackathons
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { unstable_cache } from "next/cache";
@@ -106,49 +107,54 @@ export async function registerForCompetition(
   competitionSlug: string,
   entry: CompetitionEntry
 ): Promise<ActionResult> {
-  const { user } = await requireUser();
-  assertSelfOrAdmin(user.id, userId, user.role);
+  try {
+    const { user } = await requireUser();
+    assertSelfOrAdmin(user.id, userId, user.role);
 
-  const teamName = entry.teamName?.trim() ?? "";
-  const country = entry.country?.trim() ?? "";
-  if (!teamName) return { success: false, error: "Enter a team name." };
-  if (!country) return { success: false, error: "Select the country your team is entering from." };
+    const teamName = entry.teamName?.trim() ?? "";
+    const country = entry.country?.trim() ?? "";
+    if (!teamName) return { success: false, error: "Enter a team name." };
+    if (!country) return { success: false, error: "Select the country your team is entering from." };
 
-  const competition = await db.competition.findUnique({
-    where: { slug: competitionSlug },
-  });
-  if (!competition || competition.status !== "REGISTRATION_OPEN") {
-    return { success: false, error: "Registration is not open for this competition." };
+    const competition = await db.competition.findUnique({
+      where: { slug: competitionSlug },
+    });
+    if (!competition || competition.status !== "REGISTRATION_OPEN") {
+      return { success: false, error: "Registration is not open for this competition." };
+    }
+
+    const existing = await db.competitionRegistration.findUnique({
+      where: { userId_competitionId: { userId, competitionId: competition.id } },
+    });
+    if (existing) return { success: false, error: "You are already registered." };
+
+    await db.$transaction([
+      db.competitionRegistration.create({
+        data: {
+          userId,
+          competitionId: competition.id,
+          teamName,
+          country,
+          schoolName: entry.schoolName?.trim() || null,
+          memberCount: Number.isFinite(entry.memberCount) ? entry.memberCount : null,
+          memberNames: entry.memberNames?.trim() || null,
+          ageRange: entry.ageRange?.trim() || null,
+          contactPhone: entry.contactPhone?.trim() || null,
+        },
+      }),
+      db.competition.update({
+        where: { id: competition.id },
+        data: { teamsCount: { increment: 1 } },
+      }),
+    ]);
+
+    revalidatePath("/dashboard/competitions");
+    revalidateCompetitionCatalog(competitionSlug);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("competitions", e);
   }
-
-  const existing = await db.competitionRegistration.findUnique({
-    where: { userId_competitionId: { userId, competitionId: competition.id } },
-  });
-  if (existing) return { success: false, error: "You are already registered." };
-
-  await db.$transaction([
-    db.competitionRegistration.create({
-      data: {
-        userId,
-        competitionId: competition.id,
-        teamName,
-        country,
-        schoolName: entry.schoolName?.trim() || null,
-        memberCount: Number.isFinite(entry.memberCount) ? entry.memberCount : null,
-        memberNames: entry.memberNames?.trim() || null,
-        ageRange: entry.ageRange?.trim() || null,
-        contactPhone: entry.contactPhone?.trim() || null,
-      },
-    }),
-    db.competition.update({
-      where: { id: competition.id },
-      data: { teamsCount: { increment: 1 } },
-    }),
-  ]);
-
-  revalidatePath("/dashboard/competitions");
-  revalidateCompetitionCatalog(competitionSlug);
-  return { success: true, data: undefined };
 }
 
 // ─── Admin CRUD ───────────────────────────────────────────────────────────────
@@ -179,64 +185,79 @@ export type CompetitionSaveInput = {
 export async function createCompetition(
   input: CompetitionSaveInput
 ): Promise<ActionResult<{ competitionId: string }>> {
-  await requireAdmin();
-  if (!input.title.trim()) return { success: false, error: "Title is required." };
+  try {
+    await requireAdmin();
+    if (!input.title.trim()) return { success: false, error: "Title is required." };
 
-  const slug = await uniqueCompetitionSlug(input.title);
-  const competition = await db.competition.create({
-    data: {
-      slug,
-      title: input.title.trim(),
-      thumbnailUrl: input.thumbnailUrl?.trim() || null,
-      description: input.description?.trim() ?? null,
-      startDate: input.startDate ? new Date(input.startDate) : null,
-      endDate: input.endDate ? new Date(input.endDate) : null,
-      prize: input.prize?.trim() ?? null,
-      status: input.status,
-    },
-  });
+    const slug = await uniqueCompetitionSlug(input.title);
+    const competition = await db.competition.create({
+      data: {
+        slug,
+        title: input.title.trim(),
+        thumbnailUrl: input.thumbnailUrl?.trim() || null,
+        description: input.description?.trim() ?? null,
+        startDate: input.startDate ? new Date(input.startDate) : null,
+        endDate: input.endDate ? new Date(input.endDate) : null,
+        prize: input.prize?.trim() ?? null,
+        status: input.status,
+      },
+    });
 
-  revalidatePath("/admin/competitions");
-  revalidateCompetitionCatalog();
-  return { success: true, data: { competitionId: competition.id } };
+    revalidatePath("/admin/competitions");
+    revalidateCompetitionCatalog();
+    return { success: true, data: { competitionId: competition.id } };
+
+  } catch (e) {
+    return actionFailure("competitions", e);
+  }
 }
 
 export async function updateCompetition(
   competitionId: string,
   input: CompetitionSaveInput
 ): Promise<ActionResult> {
-  await requireAdmin();
-  const existing = await db.competition.findUnique({ where: { id: competitionId } });
-  if (!existing) return { success: false, error: "Competition not found." };
+  try {
+    await requireAdmin();
+    const existing = await db.competition.findUnique({ where: { id: competitionId } });
+    if (!existing) return { success: false, error: "Competition not found." };
 
-  const slug =
-    slugify(input.title) === existing.slug
-      ? existing.slug
-      : await uniqueCompetitionSlug(input.title, competitionId);
+    const slug =
+      slugify(input.title) === existing.slug
+        ? existing.slug
+        : await uniqueCompetitionSlug(input.title, competitionId);
 
-  await db.competition.update({
-    where: { id: competitionId },
-    data: {
-      slug,
-      title: input.title.trim(),
-      thumbnailUrl: input.thumbnailUrl?.trim() || null,
-      description: input.description?.trim() ?? null,
-      startDate: input.startDate ? new Date(input.startDate) : null,
-      endDate: input.endDate ? new Date(input.endDate) : null,
-      prize: input.prize?.trim() ?? null,
-      status: input.status,
-    },
-  });
+    await db.competition.update({
+      where: { id: competitionId },
+      data: {
+        slug,
+        title: input.title.trim(),
+        thumbnailUrl: input.thumbnailUrl?.trim() || null,
+        description: input.description?.trim() ?? null,
+        startDate: input.startDate ? new Date(input.startDate) : null,
+        endDate: input.endDate ? new Date(input.endDate) : null,
+        prize: input.prize?.trim() ?? null,
+        status: input.status,
+      },
+    });
 
-  revalidatePath("/admin/competitions");
-  revalidateCompetitionCatalog(existing.slug);
-  return { success: true, data: undefined };
+    revalidatePath("/admin/competitions");
+    revalidateCompetitionCatalog(existing.slug);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("competitions", e);
+  }
 }
 
 export async function deleteCompetition(competitionId: string): Promise<ActionResult> {
-  await requireAdmin();
-  await db.competition.delete({ where: { id: competitionId } });
-  revalidatePath("/admin/competitions");
-  revalidateCompetitionCatalog();
-  return { success: true, data: undefined };
+  try {
+    await requireAdmin();
+    await db.competition.delete({ where: { id: competitionId } });
+    revalidatePath("/admin/competitions");
+    revalidateCompetitionCatalog();
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("competitions", e);
+  }
 }

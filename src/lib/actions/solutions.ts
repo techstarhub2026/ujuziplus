@@ -2,6 +2,7 @@
  * IoT Solutions catalog, community contributions & workspace joins
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
@@ -79,19 +80,24 @@ export async function getUserSolutionJoins(userId: string) {
 }
 
 export async function joinSolution(userId: string, solutionSlug: string): Promise<ActionResult> {
-  const { user } = await requireUser();
-  assertSelfOrAdmin(user.id, userId, user.role);
-  const solution = await db.solution.findFirst({ where: { slug: solutionSlug, status: "PUBLISHED" } });
-  if (!solution) return { success: false, error: "Solution not found." };
-  await db.solutionJoin.upsert({
-    where: { userId_solutionId: { userId, solutionId: solution.id } },
-    create: { userId, solutionId: solution.id, labProgress: [] },
-    update: {},
-  });
-  revalidatePath("/solutions");
-  revalidateTag("published-solutions");
-  revalidatePath("/dashboard/solutions");
-  return { success: true, data: undefined };
+  try {
+    const { user } = await requireUser();
+    assertSelfOrAdmin(user.id, userId, user.role);
+    const solution = await db.solution.findFirst({ where: { slug: solutionSlug, status: "PUBLISHED" } });
+    if (!solution) return { success: false, error: "Solution not found." };
+    await db.solutionJoin.upsert({
+      where: { userId_solutionId: { userId, solutionId: solution.id } },
+      create: { userId, solutionId: solution.id, labProgress: [] },
+      update: {},
+    });
+    revalidatePath("/solutions");
+    revalidateTag("published-solutions");
+    revalidatePath("/dashboard/solutions");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
+  }
 }
 
 export async function updateSolutionLabProgress(
@@ -99,15 +105,20 @@ export async function updateSolutionLabProgress(
   solutionSlug: string,
   completedSteps: number[]
 ): Promise<ActionResult> {
-  const { user } = await requireUser();
-  assertSelfOrAdmin(user.id, userId, user.role);
-  const solution = await db.solution.findFirst({ where: { slug: solutionSlug } });
-  if (!solution) return { success: false, error: "Solution not found." };
-  await db.solutionJoin.updateMany({
-    where: { userId, solutionId: solution.id },
-    data: { labProgress: completedSteps },
-  });
-  return { success: true, data: undefined };
+  try {
+    const { user } = await requireUser();
+    assertSelfOrAdmin(user.id, userId, user.role);
+    const solution = await db.solution.findFirst({ where: { slug: solutionSlug } });
+    if (!solution) return { success: false, error: "Solution not found." };
+    await db.solutionJoin.updateMany({
+      where: { userId, solutionId: solution.id },
+      data: { labProgress: completedSteps },
+    });
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
+  }
 }
 
 // ─── Community contributions ─────────────────────────────────────────────────
@@ -159,45 +170,50 @@ async function uniqueSolutionSlug(title: string) {
 export async function createSolutionDraft(
   input: SolutionDraftInput
 ): Promise<ActionResult<{ slug: string }>> {
-  const { user } = await requireUserFromDb();
-  if (!user.isActive) return { success: false, error: "Your account is not active." };
-  if (!input.title.trim()) return { success: false, error: "Title is required." };
+  try {
+    const { user } = await requireUserFromDb();
+    if (!user.isActive) return { success: false, error: "Your account is not active." };
+    if (!input.title.trim()) return { success: false, error: "Title is required." };
 
-  // If orgId given, verify user is org admin
-  if (input.orgId) {
-    const isMember = await db.organizationMember.findFirst({
-      where: { orgId: input.orgId, userId: user.id, role: { in: ["ADMIN", "INSTRUCTOR"] } },
-    });
-    if (!isMember && user.role !== "ADMIN") {
-      return { success: false, error: "Not authorised to post on behalf of this organisation." };
+    // If orgId given, verify user is org admin
+    if (input.orgId) {
+      const isMember = await db.organizationMember.findFirst({
+        where: { orgId: input.orgId, userId: user.id, role: { in: ["ADMIN", "INSTRUCTOR"] } },
+      });
+      if (!isMember && user.role !== "ADMIN") {
+        return { success: false, error: "Not authorised to post on behalf of this organisation." };
+      }
     }
+
+    const slug = await uniqueSolutionSlug(input.title);
+    const solution = await db.solution.create({
+      data: {
+        slug,
+        title: input.title.trim(),
+        subtitle: input.subtitle?.trim() ?? null,
+        description: input.description.trim(),
+        level: input.level,
+        hours: input.hours,
+        thumbnailUrl: input.thumbnailUrl ?? null,
+        tags: input.tags ?? [],
+        components: input.components ?? [],
+        relatedKitSlugs: input.relatedKitSlugs ?? [],
+        labSteps: input.labSteps ?? [],
+        codeTemplate: input.codeTemplate ?? null,
+        status: "DRAFT",
+        authorId: user.id,
+        orgId: input.orgId ?? null,
+      },
+    });
+
+    revalidatePath("/solutions");
+    revalidateTag("published-solutions");
+    revalidatePath("/dashboard/solutions");
+    return { success: true, data: { slug: solution.slug } };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
   }
-
-  const slug = await uniqueSolutionSlug(input.title);
-  const solution = await db.solution.create({
-    data: {
-      slug,
-      title: input.title.trim(),
-      subtitle: input.subtitle?.trim() ?? null,
-      description: input.description.trim(),
-      level: input.level,
-      hours: input.hours,
-      thumbnailUrl: input.thumbnailUrl ?? null,
-      tags: input.tags ?? [],
-      components: input.components ?? [],
-      relatedKitSlugs: input.relatedKitSlugs ?? [],
-      labSteps: input.labSteps ?? [],
-      codeTemplate: input.codeTemplate ?? null,
-      status: "DRAFT",
-      authorId: user.id,
-      orgId: input.orgId ?? null,
-    },
-  });
-
-  revalidatePath("/solutions");
-  revalidateTag("published-solutions");
-  revalidatePath("/dashboard/solutions");
-  return { success: true, data: { slug: solution.slug } };
 }
 
 /** Author updates their own DRAFT or REJECTED solution */
@@ -205,64 +221,74 @@ export async function updateSolutionDraft(
   solutionId: string,
   input: SolutionDraftInput
 ): Promise<ActionResult> {
-  const { user } = await requireUser();
-  const solution = await db.solution.findUnique({ where: { id: solutionId } });
-  if (!solution) return { success: false, error: "Not found." };
-  if (solution.authorId !== user.id && user.role !== "ADMIN") {
-    return { success: false, error: "Not authorised." };
-  }
-  if (!["DRAFT", "REJECTED"].includes(solution.status)) {
-    return { success: false, error: "Only drafts and rejected submissions can be edited." };
-  }
+  try {
+    const { user } = await requireUser();
+    const solution = await db.solution.findUnique({ where: { id: solutionId } });
+    if (!solution) return { success: false, error: "Not found." };
+    if (solution.authorId !== user.id && user.role !== "ADMIN") {
+      return { success: false, error: "Not authorised." };
+    }
+    if (!["DRAFT", "REJECTED"].includes(solution.status)) {
+      return { success: false, error: "Only drafts and rejected submissions can be edited." };
+    }
 
-  await db.solution.update({
-    where: { id: solutionId },
-    data: {
-      title: input.title.trim(),
-      subtitle: input.subtitle?.trim() ?? null,
-      description: input.description.trim(),
-      level: input.level,
-      hours: input.hours,
-      thumbnailUrl: input.thumbnailUrl ?? null,
-      tags: input.tags ?? [],
-      components: input.components ?? [],
-      relatedKitSlugs: input.relatedKitSlugs ?? [],
-      labSteps: input.labSteps ?? [],
-      codeTemplate: input.codeTemplate ?? null,
-      orgId: input.orgId ?? null,
-      rejectionReason: null,
-    },
-  });
+    await db.solution.update({
+      where: { id: solutionId },
+      data: {
+        title: input.title.trim(),
+        subtitle: input.subtitle?.trim() ?? null,
+        description: input.description.trim(),
+        level: input.level,
+        hours: input.hours,
+        thumbnailUrl: input.thumbnailUrl ?? null,
+        tags: input.tags ?? [],
+        components: input.components ?? [],
+        relatedKitSlugs: input.relatedKitSlugs ?? [],
+        labSteps: input.labSteps ?? [],
+        codeTemplate: input.codeTemplate ?? null,
+        orgId: input.orgId ?? null,
+        rejectionReason: null,
+      },
+    });
 
-  revalidatePath(`/solutions/${solution.slug}`);
-  return { success: true, data: undefined };
+    revalidatePath(`/solutions/${solution.slug}`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
+  }
 }
 
 /** Author submits their draft for admin review */
 export async function submitSolutionForReview(solutionId: string): Promise<ActionResult> {
-  const { user } = await requireUser();
-  const solution = await db.solution.findUnique({ where: { id: solutionId } });
-  if (!solution) return { success: false, error: "Not found." };
-  if (solution.authorId !== user.id && user.role !== "ADMIN") {
-    return { success: false, error: "Not authorised." };
-  }
-  if (!["DRAFT", "REJECTED"].includes(solution.status)) {
-    return { success: false, error: "Only drafts and rejected submissions can be submitted for review." };
-  }
-  const steps = solution.labSteps as unknown[];
-  if (!solution.title || !solution.description || !steps?.length) {
-    return { success: false, error: "Please add a title, description, and at least one lab step before submitting." };
-  }
+  try {
+    const { user } = await requireUser();
+    const solution = await db.solution.findUnique({ where: { id: solutionId } });
+    if (!solution) return { success: false, error: "Not found." };
+    if (solution.authorId !== user.id && user.role !== "ADMIN") {
+      return { success: false, error: "Not authorised." };
+    }
+    if (!["DRAFT", "REJECTED"].includes(solution.status)) {
+      return { success: false, error: "Only drafts and rejected submissions can be submitted for review." };
+    }
+    const steps = solution.labSteps as unknown[];
+    if (!solution.title || !solution.description || !steps?.length) {
+      return { success: false, error: "Please add a title, description, and at least one lab step before submitting." };
+    }
 
-  await db.solution.update({
-    where: { id: solutionId },
-    data: { status: "PENDING_REVIEW", rejectionReason: null },
-  });
+    await db.solution.update({
+      where: { id: solutionId },
+      data: { status: "PENDING_REVIEW", rejectionReason: null },
+    });
 
-  revalidatePath("/solutions");
-  revalidateTag("published-solutions");
-  revalidatePath("/admin/content");
-  return { success: true, data: undefined };
+    revalidatePath("/solutions");
+    revalidateTag("published-solutions");
+    revalidatePath("/admin/content");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
+  }
 }
 
 /** Get current user's own submissions */
@@ -302,44 +328,80 @@ export async function getPendingReviewSolutions() {
 }
 
 export async function adminApproveSolution(solutionId: string): Promise<ActionResult> {
-  await requireAdmin();
-  await db.solution.update({
-    where: { id: solutionId },
-    data: { status: "PUBLISHED", rejectionReason: null },
-  });
-  revalidatePath("/solutions");
-  revalidateTag("published-solutions");
-  revalidatePath("/admin/content");
-  return { success: true, data: undefined };
+  try {
+    await requireAdmin();
+    await db.solution.update({
+      where: { id: solutionId },
+      data: { status: "PUBLISHED", rejectionReason: null },
+    });
+    revalidatePath("/solutions");
+    revalidateTag("published-solutions");
+    revalidatePath("/admin/content");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
+  }
 }
 
 export async function adminRejectSolution(
   solutionId: string,
   reason: string
 ): Promise<ActionResult> {
-  await requireAdmin();
-  await db.solution.update({
-    where: { id: solutionId },
-    data: { status: "REJECTED", rejectionReason: reason.trim() || "Does not meet submission guidelines." },
-  });
-  revalidatePath("/solutions");
-  revalidateTag("published-solutions");
-  revalidatePath("/admin/content");
-  return { success: true, data: undefined };
+  try {
+    await requireAdmin();
+    await db.solution.update({
+      where: { id: solutionId },
+      data: { status: "REJECTED", rejectionReason: reason.trim() || "Does not meet submission guidelines." },
+    });
+    revalidatePath("/solutions");
+    revalidateTag("published-solutions");
+    revalidatePath("/admin/content");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
+  }
 }
 
 export async function adminPublishDirectly(
   input: SolutionDraftInput & { id?: string }
 ): Promise<ActionResult<{ slug: string }>> {
-  const { user } = await requireAdmin();
-  if (!input.title.trim()) return { success: false, error: "Title is required." };
+  try {
+    const { user } = await requireAdmin();
+    if (!input.title.trim()) return { success: false, error: "Title is required." };
 
-  if (input.id) {
-    const existing = await db.solution.findUnique({ where: { id: input.id } });
-    if (!existing) return { success: false, error: "Not found." };
-    await db.solution.update({
-      where: { id: input.id },
+    if (input.id) {
+      const existing = await db.solution.findUnique({ where: { id: input.id } });
+      if (!existing) return { success: false, error: "Not found." };
+      await db.solution.update({
+        where: { id: input.id },
+        data: {
+          title: input.title.trim(),
+          subtitle: input.subtitle?.trim() ?? null,
+          description: input.description.trim(),
+          level: input.level,
+          hours: input.hours,
+          thumbnailUrl: input.thumbnailUrl ?? null,
+          tags: input.tags ?? [],
+          components: input.components ?? [],
+          relatedKitSlugs: input.relatedKitSlugs ?? [],
+          labSteps: input.labSteps ?? [],
+          codeTemplate: input.codeTemplate ?? null,
+          orgId: input.orgId ?? null,
+          status: "PUBLISHED",
+        },
+      });
+      revalidatePath("/solutions");
+    revalidateTag("published-solutions");
+      revalidatePath("/admin/content");
+      return { success: true, data: { slug: existing.slug } };
+    }
+
+    const slug = await uniqueSolutionSlug(input.title);
+    const solution = await db.solution.create({
       data: {
+        slug,
         title: input.title.trim(),
         subtitle: input.subtitle?.trim() ?? null,
         description: input.description.trim(),
@@ -351,41 +413,20 @@ export async function adminPublishDirectly(
         relatedKitSlugs: input.relatedKitSlugs ?? [],
         labSteps: input.labSteps ?? [],
         codeTemplate: input.codeTemplate ?? null,
-        orgId: input.orgId ?? null,
         status: "PUBLISHED",
+        authorId: user.id,
+        orgId: input.orgId ?? null,
       },
     });
+
     revalidatePath("/solutions");
-  revalidateTag("published-solutions");
+    revalidateTag("published-solutions");
     revalidatePath("/admin/content");
-    return { success: true, data: { slug: existing.slug } };
+    return { success: true, data: { slug: solution.slug } };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
   }
-
-  const slug = await uniqueSolutionSlug(input.title);
-  const solution = await db.solution.create({
-    data: {
-      slug,
-      title: input.title.trim(),
-      subtitle: input.subtitle?.trim() ?? null,
-      description: input.description.trim(),
-      level: input.level,
-      hours: input.hours,
-      thumbnailUrl: input.thumbnailUrl ?? null,
-      tags: input.tags ?? [],
-      components: input.components ?? [],
-      relatedKitSlugs: input.relatedKitSlugs ?? [],
-      labSteps: input.labSteps ?? [],
-      codeTemplate: input.codeTemplate ?? null,
-      status: "PUBLISHED",
-      authorId: user.id,
-      orgId: input.orgId ?? null,
-    },
-  });
-
-  revalidatePath("/solutions");
-  revalidateTag("published-solutions");
-  revalidatePath("/admin/content");
-  return { success: true, data: { slug: solution.slug } };
 }
 
 /** Org admin creates a solution for their org */
@@ -393,41 +434,46 @@ export async function createOrgSolution(
   orgId: string,
   input: SolutionDraftInput
 ): Promise<ActionResult<{ slug: string }>> {
-  const { user } = await requireUser();
-  const membership = await db.organizationMember.findFirst({
-    where: { orgId, userId: user.id, role: { in: ["ADMIN", "INSTRUCTOR"] } },
-  });
-  if (!membership && user.role !== "ADMIN") {
-    return { success: false, error: "Not authorised." };
+  try {
+    const { user } = await requireUser();
+    const membership = await db.organizationMember.findFirst({
+      where: { orgId, userId: user.id, role: { in: ["ADMIN", "INSTRUCTOR"] } },
+    });
+    if (!membership && user.role !== "ADMIN") {
+      return { success: false, error: "Not authorised." };
+    }
+    if (!input.title.trim()) return { success: false, error: "Title is required." };
+
+    const slug = await uniqueSolutionSlug(input.title);
+    const isAdmin = user.role === "ADMIN";
+    const solution = await db.solution.create({
+      data: {
+        slug,
+        title: input.title.trim(),
+        subtitle: input.subtitle?.trim() ?? null,
+        description: input.description.trim(),
+        level: input.level,
+        hours: input.hours,
+        thumbnailUrl: input.thumbnailUrl ?? null,
+        tags: input.tags ?? [],
+        components: input.components ?? [],
+        relatedKitSlugs: input.relatedKitSlugs ?? [],
+        labSteps: input.labSteps ?? [],
+        codeTemplate: input.codeTemplate ?? null,
+        status: isAdmin ? "PUBLISHED" : "PENDING_REVIEW",
+        authorId: user.id,
+        orgId,
+      },
+    });
+
+    revalidatePath("/solutions");
+    revalidateTag("published-solutions");
+    revalidatePath("/admin/content");
+    return { success: true, data: { slug: solution.slug } };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
   }
-  if (!input.title.trim()) return { success: false, error: "Title is required." };
-
-  const slug = await uniqueSolutionSlug(input.title);
-  const isAdmin = user.role === "ADMIN";
-  const solution = await db.solution.create({
-    data: {
-      slug,
-      title: input.title.trim(),
-      subtitle: input.subtitle?.trim() ?? null,
-      description: input.description.trim(),
-      level: input.level,
-      hours: input.hours,
-      thumbnailUrl: input.thumbnailUrl ?? null,
-      tags: input.tags ?? [],
-      components: input.components ?? [],
-      relatedKitSlugs: input.relatedKitSlugs ?? [],
-      labSteps: input.labSteps ?? [],
-      codeTemplate: input.codeTemplate ?? null,
-      status: isAdmin ? "PUBLISHED" : "PENDING_REVIEW",
-      authorId: user.id,
-      orgId,
-    },
-  });
-
-  revalidatePath("/solutions");
-  revalidateTag("published-solutions");
-  revalidatePath("/admin/content");
-  return { success: true, data: { slug: solution.slug } };
 }
 
 // Legacy compat — keep for admin content panel
@@ -447,66 +493,81 @@ export async function adminUpsertSolution(input: {
   codeTemplate?: string;
   status: SolutionStatus;
 }): Promise<ActionResult> {
-  await requireAdmin();
-  const data = {
-    slug: input.slug.trim(),
-    title: input.title.trim(),
-    subtitle: input.subtitle?.trim() ?? null,
-    description: input.description.trim(),
-    level: input.level,
-    hours: input.hours,
-    thumbnailUrl: input.thumbnailUrl ?? null,
-    tags: input.tags ?? [],
-    components: input.components,
-    relatedKitSlugs: input.relatedKitSlugs ?? [],
-    labSteps: input.labSteps ?? [],
-    codeTemplate: input.codeTemplate ?? null,
-    status: input.status,
-  };
-  if (input.id) {
-    await db.solution.update({ where: { id: input.id }, data });
-  } else {
-    await db.solution.create({ data });
+  try {
+    await requireAdmin();
+    const data = {
+      slug: input.slug.trim(),
+      title: input.title.trim(),
+      subtitle: input.subtitle?.trim() ?? null,
+      description: input.description.trim(),
+      level: input.level,
+      hours: input.hours,
+      thumbnailUrl: input.thumbnailUrl ?? null,
+      tags: input.tags ?? [],
+      components: input.components,
+      relatedKitSlugs: input.relatedKitSlugs ?? [],
+      labSteps: input.labSteps ?? [],
+      codeTemplate: input.codeTemplate ?? null,
+      status: input.status,
+    };
+    if (input.id) {
+      await db.solution.update({ where: { id: input.id }, data });
+    } else {
+      await db.solution.create({ data });
+    }
+    revalidatePath("/admin/content");
+    revalidatePath("/solutions");
+    revalidateTag("published-solutions");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
   }
-  revalidatePath("/admin/content");
-  revalidatePath("/solutions");
-  revalidateTag("published-solutions");
-  return { success: true, data: undefined };
 }
 
 export async function adminDeleteSolution(solutionId: string): Promise<ActionResult> {
-  await requireAdmin();
-
-  let solution;
   try {
-    solution = await db.solution.delete({ where: { id: solutionId } });
-  } catch {
-    return { success: false, error: "Not found." };
-  }
+    await requireAdmin();
 
-  revalidatePath("/admin/content");
-  revalidatePath("/solutions");
-  revalidateTag("published-solutions");
-  revalidatePath(`/solutions/${solution.slug}`);
-  return { success: true, data: undefined };
+    let solution;
+    try {
+      solution = await db.solution.delete({ where: { id: solutionId } });
+    } catch {
+      return { success: false, error: "Not found." };
+    }
+
+    revalidatePath("/admin/content");
+    revalidatePath("/solutions");
+    revalidateTag("published-solutions");
+    revalidatePath(`/solutions/${solution.slug}`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
+  }
 }
 
 /** Author deletes their own DRAFT or REJECTED solution */
 export async function deleteSolutionDraft(solutionId: string): Promise<ActionResult> {
-  const { user } = await requireUser();
-  const solution = await db.solution.findUnique({ where: { id: solutionId } });
-  if (!solution) return { success: false, error: "Not found." };
-  if (solution.authorId !== user.id && user.role !== "ADMIN") {
-    return { success: false, error: "Not authorised." };
-  }
-  if (!["DRAFT", "REJECTED"].includes(solution.status)) {
-    return { success: false, error: "Only drafts and rejected submissions can be deleted." };
-  }
+  try {
+    const { user } = await requireUser();
+    const solution = await db.solution.findUnique({ where: { id: solutionId } });
+    if (!solution) return { success: false, error: "Not found." };
+    if (solution.authorId !== user.id && user.role !== "ADMIN") {
+      return { success: false, error: "Not authorised." };
+    }
+    if (!["DRAFT", "REJECTED"].includes(solution.status)) {
+      return { success: false, error: "Only drafts and rejected submissions can be deleted." };
+    }
 
-  await db.solution.delete({ where: { id: solutionId } });
+    await db.solution.delete({ where: { id: solutionId } });
 
-  revalidatePath("/solutions");
-  revalidateTag("published-solutions");
-  revalidatePath("/dashboard/solutions");
-  return { success: true, data: undefined };
+    revalidatePath("/solutions");
+    revalidateTag("published-solutions");
+    revalidatePath("/dashboard/solutions");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("solutions", e);
+  }
 }

@@ -2,6 +2,7 @@
  * Innovation showcase projects
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
@@ -98,85 +99,95 @@ export async function createProject(
     teamMembers?: { name: string; role?: "LEAD" | "CONTRIBUTOR" | "MENTOR"; userId?: string }[];
   }
 ): Promise<ActionResult<{ slug: string }>> {
-  const { user } = await requireUser();
-  assertSelfOrAdmin(user.id, userId, user.role);
+  try {
+    const { user } = await requireUser();
+    assertSelfOrAdmin(user.id, userId, user.role);
 
-  if (!input.title.trim() || !input.description.trim()) {
-    return { success: false, error: "Title and description are required." };
+    if (!input.title.trim() || !input.description.trim()) {
+      return { success: false, error: "Title and description are required." };
+    }
+
+    const slug = await uniqueProjectSlug(input.title);
+    const project = await db.project.create({
+      data: {
+        slug,
+        title: input.title.trim(),
+        description: input.description.trim(),
+        category: input.category.trim() || "General",
+        tags: input.tags ?? [],
+        status: input.status ?? "PROTOTYPE",
+        githubUrl: input.githubUrl?.trim() || null,
+        demoUrl: input.demoUrl?.trim() || null,
+        thumbnailUrl: input.thumbnailUrl?.trim() || null,
+        objectives: input.objectives?.trim() || null,
+        documentation: input.documentation?.trim() || null,
+        impact: input.impact?.trim() || null,
+        organizationId: input.organizationId || null,
+        mediaGallery: input.mediaGallery ?? undefined,
+        creatorId: userId,
+        isPublished: true,
+        teamMembers: input.teamMembers?.length
+          ? {
+              create: input.teamMembers.map((m, i) => ({
+                name: m.name,
+                role: m.role ?? "CONTRIBUTOR",
+                userId: m.userId,
+                orderIndex: i,
+              })),
+            }
+          : undefined,
+      },
+    });
+
+    revalidatePath("/projects");
+    revalidateTag("published-projects");
+    revalidatePath("/dashboard/projects");
+    return { success: true, data: { slug: project.slug } };
+
+  } catch (e) {
+    return actionFailure("projects", e);
   }
-
-  const slug = await uniqueProjectSlug(input.title);
-  const project = await db.project.create({
-    data: {
-      slug,
-      title: input.title.trim(),
-      description: input.description.trim(),
-      category: input.category.trim() || "General",
-      tags: input.tags ?? [],
-      status: input.status ?? "PROTOTYPE",
-      githubUrl: input.githubUrl?.trim() || null,
-      demoUrl: input.demoUrl?.trim() || null,
-      thumbnailUrl: input.thumbnailUrl?.trim() || null,
-      objectives: input.objectives?.trim() || null,
-      documentation: input.documentation?.trim() || null,
-      impact: input.impact?.trim() || null,
-      organizationId: input.organizationId || null,
-      mediaGallery: input.mediaGallery ?? undefined,
-      creatorId: userId,
-      isPublished: true,
-      teamMembers: input.teamMembers?.length
-        ? {
-            create: input.teamMembers.map((m, i) => ({
-              name: m.name,
-              role: m.role ?? "CONTRIBUTOR",
-              userId: m.userId,
-              orderIndex: i,
-            })),
-          }
-        : undefined,
-    },
-  });
-
-  revalidatePath("/projects");
-  revalidateTag("published-projects");
-  revalidatePath("/dashboard/projects");
-  return { success: true, data: { slug: project.slug } };
 }
 
 export async function toggleProjectLike(
   userId: string,
   projectId: string
 ): Promise<ActionResult<{ liked: boolean }>> {
-  const { user } = await requireUser();
-  assertSelfOrAdmin(user.id, userId, user.role);
+  try {
+    const { user } = await requireUser();
+    assertSelfOrAdmin(user.id, userId, user.role);
 
-  const existing = await db.projectLike.findUnique({
-    where: { userId_projectId: { userId, projectId } },
-  });
+    const existing = await db.projectLike.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+    });
 
-  if (existing) {
+    if (existing) {
+      await db.$transaction([
+        db.projectLike.delete({ where: { id: existing.id } }),
+        db.project.update({
+          where: { id: projectId },
+          data: { likesCount: { decrement: 1 } },
+        }),
+      ]);
+      revalidatePath("/projects");
+    revalidateTag("published-projects");
+      return { success: true, data: { liked: false } };
+    }
+
     await db.$transaction([
-      db.projectLike.delete({ where: { id: existing.id } }),
+      db.projectLike.create({ data: { userId, projectId } }),
       db.project.update({
         where: { id: projectId },
-        data: { likesCount: { decrement: 1 } },
+        data: { likesCount: { increment: 1 } },
       }),
     ]);
     revalidatePath("/projects");
-  revalidateTag("published-projects");
-    return { success: true, data: { liked: false } };
-  }
+    revalidateTag("published-projects");
+    return { success: true, data: { liked: true } };
 
-  await db.$transaction([
-    db.projectLike.create({ data: { userId, projectId } }),
-    db.project.update({
-      where: { id: projectId },
-      data: { likesCount: { increment: 1 } },
-    }),
-  ]);
-  revalidatePath("/projects");
-  revalidateTag("published-projects");
-  return { success: true, data: { liked: true } };
+  } catch (e) {
+    return actionFailure("projects", e);
+  }
 }
 
 export async function getAdminProjects() {
@@ -191,46 +202,61 @@ export async function adminToggleProjectPublished(
   projectId: string,
   isPublished: boolean
 ): Promise<ActionResult> {
-  await requireAdmin();
-  await db.project.update({ where: { id: projectId }, data: { isPublished } });
-  revalidatePath("/admin/content");
-  revalidatePath("/projects");
-  revalidateTag("published-projects");
-  return { success: true, data: undefined };
+  try {
+    await requireAdmin();
+    await db.project.update({ where: { id: projectId }, data: { isPublished } });
+    revalidatePath("/admin/content");
+    revalidatePath("/projects");
+    revalidateTag("published-projects");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("projects", e);
+  }
 }
 
 export async function adminDeleteProject(projectId: string): Promise<ActionResult> {
-  await requireAdmin();
-
-  let project;
   try {
-    project = await db.project.delete({ where: { id: projectId } });
-  } catch {
-    return { success: false, error: "Not found." };
-  }
+    await requireAdmin();
 
-  revalidatePath("/admin/content");
-  revalidatePath("/projects");
-  revalidateTag("published-projects");
-  revalidatePath(`/projects/${project.slug}`);
-  return { success: true, data: undefined };
+    let project;
+    try {
+      project = await db.project.delete({ where: { id: projectId } });
+    } catch {
+      return { success: false, error: "Not found." };
+    }
+
+    revalidatePath("/admin/content");
+    revalidatePath("/projects");
+    revalidateTag("published-projects");
+    revalidatePath(`/projects/${project.slug}`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("projects", e);
+  }
 }
 
 /** Creator deletes their own project */
 export async function deleteProject(userId: string, projectId: string): Promise<ActionResult> {
-  const { user } = await requireUser();
-  assertSelfOrAdmin(user.id, userId, user.role);
+  try {
+    const { user } = await requireUser();
+    assertSelfOrAdmin(user.id, userId, user.role);
 
-  const project = await db.project.findUnique({ where: { id: projectId } });
-  if (!project) return { success: false, error: "Not found." };
-  if (project.creatorId !== userId && user.role !== "ADMIN") {
-    return { success: false, error: "Not authorised." };
+    const project = await db.project.findUnique({ where: { id: projectId } });
+    if (!project) return { success: false, error: "Not found." };
+    if (project.creatorId !== userId && user.role !== "ADMIN") {
+      return { success: false, error: "Not authorised." };
+    }
+
+    await db.project.delete({ where: { id: projectId } });
+
+    revalidatePath("/projects");
+    revalidateTag("published-projects");
+    revalidatePath("/dashboard/projects");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("projects", e);
   }
-
-  await db.project.delete({ where: { id: projectId } });
-
-  revalidatePath("/projects");
-  revalidateTag("published-projects");
-  revalidatePath("/dashboard/projects");
-  return { success: true, data: undefined };
 }

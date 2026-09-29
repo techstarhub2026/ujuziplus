@@ -2,6 +2,7 @@
  * Mentors — directory, requests, sessions, office hours, group sessions
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
@@ -649,38 +650,6 @@ export async function getMentorById(mentorId: string) {
   return m ? { ...serializeMentor(m), officeHours: m.officeHours, groupSessions: m.groupSessions } : null;
 }
 
-/**
- * Turns a thrown database or permission error into the failure the form is
- * already written to display.
- *
- * Without this, a save that Prisma rejects — a duplicate slug, a userId
- * already linked to another mentor, a dropped connection — propagates out of
- * the server action and Next renders the error boundary: "Something went
- * wrong", with no indication of what the operator did or how to fix it. The
- * form's own `else showToast(res.error)` branch was unreachable.
- */
-function asFailure(e: unknown): ActionResult<never> {
-  const message = e instanceof Error ? e.message : String(e);
-
-  if (message.includes("Forbidden")) {
-    return { success: false, error: "You do not have permission to do that." };
-  }
-  // Prisma's unique-constraint violation, which here means the name produced a
-  // slug another mentor holds, or the chosen account is already linked.
-  if (message.includes("Unique constraint")) {
-    return {
-      success: false,
-      error: "Another mentor already uses that name or linked account.",
-    };
-  }
-  if (message.includes("Can't reach database")) {
-    return { success: false, error: "The database is unreachable. Try again in a moment." };
-  }
-
-  console.error("[mentors]", e);
-  return { success: false, error: message || "Something went wrong saving this mentor." };
-}
-
 export async function createMentor(input: MentorSaveInput): Promise<ActionResult<{ mentorId: string }>> {
   try {
     await requireAdmin();
@@ -694,7 +663,7 @@ export async function createMentor(input: MentorSaveInput): Promise<ActionResult
     revalidateMentorPaths();
     return { success: true, data: { mentorId: mentor.id } };
   } catch (e) {
-    return asFailure(e);
+    return actionFailure("mentors", e);
   }
 }
 
@@ -717,7 +686,7 @@ export async function updateMentor(mentorId: string, input: MentorSaveInput): Pr
     revalidateMentorPaths(existing.slug);
     return { success: true, data: undefined };
   } catch (e) {
-    return asFailure(e);
+    return actionFailure("mentors", e);
   }
 }
 
@@ -730,7 +699,7 @@ export async function deleteMentor(mentorId: string): Promise<ActionResult> {
     revalidateMentorPaths(m.slug);
     return { success: true, data: undefined };
   } catch (e) {
-    return asFailure(e);
+    return actionFailure("mentors", e);
   }
 }
 

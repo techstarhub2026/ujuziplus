@@ -2,6 +2,7 @@
  * Lab resources catalog & user bookmarks
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
@@ -59,24 +60,29 @@ export async function toggleLabResourceBookmark(
   userId: string,
   labResourceId: string
 ): Promise<ActionResult<{ saved: boolean }>> {
-  const { user } = await requireUser();
-  assertSelfOrAdmin(user.id, userId, user.role);
+  try {
+    const { user } = await requireUser();
+    assertSelfOrAdmin(user.id, userId, user.role);
 
-  const existing = await db.userLabResource.findUnique({
-    where: { userId_labResourceId: { userId, labResourceId } },
-  });
+    const existing = await db.userLabResource.findUnique({
+      where: { userId_labResourceId: { userId, labResourceId } },
+    });
 
-  if (existing) {
-    await db.userLabResource.delete({ where: { id: existing.id } });
+    if (existing) {
+      await db.userLabResource.delete({ where: { id: existing.id } });
+      revalidatePath("/lab-resources");
+      revalidatePath("/dashboard/resources");
+      return { success: true, data: { saved: false } };
+    }
+
+    await db.userLabResource.create({ data: { userId, labResourceId } });
     revalidatePath("/lab-resources");
     revalidatePath("/dashboard/resources");
-    return { success: true, data: { saved: false } };
-  }
+    return { success: true, data: { saved: true } };
 
-  await db.userLabResource.create({ data: { userId, labResourceId } });
-  revalidatePath("/lab-resources");
-  revalidatePath("/dashboard/resources");
-  return { success: true, data: { saved: true } };
+  } catch (e) {
+    return actionFailure("lab-resources", e);
+  }
 }
 
 export async function getAdminLabResources() {
@@ -99,49 +105,59 @@ export async function adminUpsertLabResource(input: {
   thumbnailUrl?: string | null;
   externalUrl?: string;
 }): Promise<ActionResult<{ slug: string }>> {
-  await requireAdmin();
+  try {
+    await requireAdmin();
 
-  const data = {
-    slug: input.slug.trim(),
-    title: input.title.trim(),
-    description: input.description?.trim() ?? null,
-    content: input.content?.trim() || null,
-    type: input.type,
-    category: input.category?.trim() ?? null,
-    fileUrl: input.fileUrl?.trim() || null,
-    pdfUrls: input.pdfUrls ?? [],
-    imageUrls: input.imageUrls ?? [],
-    tags: input.tags ?? [],
-    thumbnailUrl: input.thumbnailUrl ?? null,
-    externalUrl: input.externalUrl?.trim() || null,
-  };
+    const data = {
+      slug: input.slug.trim(),
+      title: input.title.trim(),
+      description: input.description?.trim() ?? null,
+      content: input.content?.trim() || null,
+      type: input.type,
+      category: input.category?.trim() ?? null,
+      fileUrl: input.fileUrl?.trim() || null,
+      pdfUrls: input.pdfUrls ?? [],
+      imageUrls: input.imageUrls ?? [],
+      tags: input.tags ?? [],
+      thumbnailUrl: input.thumbnailUrl ?? null,
+      externalUrl: input.externalUrl?.trim() || null,
+    };
 
-  if (input.id) {
-    await db.labResource.update({ where: { id: input.id }, data });
-  } else {
-    await db.labResource.create({ data });
+    if (input.id) {
+      await db.labResource.update({ where: { id: input.id }, data });
+    } else {
+      await db.labResource.create({ data });
+    }
+
+    revalidatePath("/admin/content");
+    revalidatePath("/lab-resources");
+    revalidatePath(`/lab-resources/${data.slug}`);
+    revalidateTag("lab-resources");
+    return { success: true, data: { slug: data.slug } };
+
+  } catch (e) {
+    return actionFailure("lab-resources", e);
   }
-
-  revalidatePath("/admin/content");
-  revalidatePath("/lab-resources");
-  revalidatePath(`/lab-resources/${data.slug}`);
-  revalidateTag("lab-resources");
-  return { success: true, data: { slug: data.slug } };
 }
 
 export async function adminDeleteLabResource(id: string): Promise<ActionResult> {
-  await requireAdmin();
-
-  let resource;
   try {
-    resource = await db.labResource.delete({ where: { id } });
-  } catch {
-    return { success: false, error: "Not found." };
-  }
+    await requireAdmin();
 
-  revalidatePath("/admin/content");
-  revalidatePath("/lab-resources");
-  revalidatePath(`/lab-resources/${resource.slug}`);
-  revalidateTag("lab-resources");
-  return { success: true, data: undefined };
+    let resource;
+    try {
+      resource = await db.labResource.delete({ where: { id } });
+    } catch {
+      return { success: false, error: "Not found." };
+    }
+
+    revalidatePath("/admin/content");
+    revalidatePath("/lab-resources");
+    revalidatePath(`/lab-resources/${resource.slug}`);
+    revalidateTag("lab-resources");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("lab-resources", e);
+  }
 }

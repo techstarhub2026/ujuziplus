@@ -2,6 +2,7 @@
  * Organization directory, admin CRUD, and org-scoped analytics
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
@@ -177,27 +178,32 @@ export async function updateOrganizationSettings(
   orgSlug: string,
   input: { name?: string; logoUrl?: string | null; type?: OrgType }
 ): Promise<ActionResult> {
-  const { user } = await requireUser();
-  if (user.id !== actorUserId) return { success: false, error: "Unauthorized." };
+  try {
+    const { user } = await requireUser();
+    if (user.id !== actorUserId) return { success: false, error: "Unauthorized." };
 
-  const access = await requireOrgAdmin(orgSlug, actorUserId);
-  if (!access.ok) return { success: false, error: access.error };
+    const access = await requireOrgAdmin(orgSlug, actorUserId);
+    if (!access.ok) return { success: false, error: access.error };
 
-  await db.organization.update({
-    where: { id: access.org.id },
-    data: {
-      name: input.name?.trim() || access.org.name,
-      logoUrl: input.logoUrl !== undefined ? input.logoUrl : access.org.logoUrl,
-      type: input.type ?? access.org.type,
-    },
-  });
+    await db.organization.update({
+      where: { id: access.org.id },
+      data: {
+        name: input.name?.trim() || access.org.name,
+        logoUrl: input.logoUrl !== undefined ? input.logoUrl : access.org.logoUrl,
+        type: input.type ?? access.org.type,
+      },
+    });
 
-  revalidatePath(`/org/${orgSlug}/settings`);
-  revalidatePath(`/org/${orgSlug}/dashboard`);
-  revalidatePath("/organizations");
-  revalidatePath("/admin/organizations");
-  revalidateTag("published-organizations");
-  return { success: true, data: undefined };
+    revalidatePath(`/org/${orgSlug}/settings`);
+    revalidatePath(`/org/${orgSlug}/dashboard`);
+    revalidatePath("/organizations");
+    revalidatePath("/admin/organizations");
+    revalidateTag("published-organizations");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("organizations", e);
+  }
 }
 
 /**
@@ -212,40 +218,45 @@ export async function setCourseOrganization(
   courseId: string,
   offered: boolean
 ): Promise<ActionResult> {
-  const { user } = await requireUser();
-  if (user.id !== actorUserId) return { success: false, error: "Unauthorized." };
+  try {
+    const { user } = await requireUser();
+    if (user.id !== actorUserId) return { success: false, error: "Unauthorized." };
 
-  const isPlatformStaff = user.role === "ADMIN" || user.role === "MODERATOR";
-  let orgId: string;
+    const isPlatformStaff = user.role === "ADMIN" || user.role === "MODERATOR";
+    let orgId: string;
 
-  if (isPlatformStaff) {
-    const org = await db.organization.findUnique({ where: { slug: orgSlug } });
-    if (!org) return { success: false, error: "Organization not found." };
-    orgId = org.id;
-  } else {
-    const access = await requireOrgAdmin(orgSlug, actorUserId);
-    if (!access.ok) return { success: false, error: access.error };
-    orgId = access.org.id;
+    if (isPlatformStaff) {
+      const org = await db.organization.findUnique({ where: { slug: orgSlug } });
+      if (!org) return { success: false, error: "Organization not found." };
+      orgId = org.id;
+    } else {
+      const access = await requireOrgAdmin(orgSlug, actorUserId);
+      if (!access.ok) return { success: false, error: access.error };
+      orgId = access.org.id;
+    }
+
+    const course = await db.course.findUnique({ where: { id: courseId } });
+    if (!course || course.status !== "PUBLISHED") {
+      return { success: false, error: "Course not found." };
+    }
+    if (offered && course.organizationId && course.organizationId !== orgId) {
+      return { success: false, error: "This course is already offered by another organization." };
+    }
+
+    await db.course.update({
+      where: { id: courseId },
+      data: { organizationId: offered ? orgId : null },
+    });
+
+    revalidatePath(`/org/${orgSlug}/courses`);
+    revalidatePath(`/organizations/${orgSlug}`);
+    revalidatePath(`/courses/${course.slug}`);
+    revalidateTag("published-organizations");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("organizations", e);
   }
-
-  const course = await db.course.findUnique({ where: { id: courseId } });
-  if (!course || course.status !== "PUBLISHED") {
-    return { success: false, error: "Course not found." };
-  }
-  if (offered && course.organizationId && course.organizationId !== orgId) {
-    return { success: false, error: "This course is already offered by another organization." };
-  }
-
-  await db.course.update({
-    where: { id: courseId },
-    data: { organizationId: offered ? orgId : null },
-  });
-
-  revalidatePath(`/org/${orgSlug}/courses`);
-  revalidatePath(`/organizations/${orgSlug}`);
-  revalidatePath(`/courses/${course.slug}`);
-  revalidateTag("published-organizations");
-  return { success: true, data: undefined };
 }
 
 // ─── Platform admin ─────────────────────────────────────────────────────────
@@ -267,30 +278,35 @@ export async function adminCreateOrganization(input: {
   logoUrl?: string;
   isVerified?: boolean;
 }): Promise<ActionResult<{ id: string }>> {
-  await requireAdmin();
+  try {
+    await requireAdmin();
 
-  const slug = input.slug.trim().toLowerCase().replace(/\s+/g, "-");
-  if (!slug || !input.name.trim()) {
-    return { success: false, error: "Name and slug are required." };
+    const slug = input.slug.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!slug || !input.name.trim()) {
+      return { success: false, error: "Name and slug are required." };
+    }
+
+    const existing = await db.organization.findUnique({ where: { slug } });
+    if (existing) return { success: false, error: "Slug already in use." };
+
+    const org = await db.organization.create({
+      data: {
+        name: input.name.trim(),
+        slug,
+        type: input.type,
+        logoUrl: input.logoUrl ?? null,
+        isVerified: input.isVerified ?? false,
+      },
+    });
+
+    revalidatePath("/admin/organizations");
+    revalidatePath("/organizations");
+    revalidateTag("published-organizations");
+    return { success: true, data: { id: org.id } };
+
+  } catch (e) {
+    return actionFailure("organizations", e);
   }
-
-  const existing = await db.organization.findUnique({ where: { slug } });
-  if (existing) return { success: false, error: "Slug already in use." };
-
-  const org = await db.organization.create({
-    data: {
-      name: input.name.trim(),
-      slug,
-      type: input.type,
-      logoUrl: input.logoUrl ?? null,
-      isVerified: input.isVerified ?? false,
-    },
-  });
-
-  revalidatePath("/admin/organizations");
-  revalidatePath("/organizations");
-  revalidateTag("published-organizations");
-  return { success: true, data: { id: org.id } };
 }
 
 export async function adminUpdateOrganization(
@@ -303,31 +319,36 @@ export async function adminUpdateOrganization(
     isVerified?: boolean;
   }
 ): Promise<ActionResult> {
-  await requireAdmin();
+  try {
+    await requireAdmin();
 
-  const org = await db.organization.findUnique({ where: { id: orgId } });
-  if (!org) return { success: false, error: "Organization not found." };
+    const org = await db.organization.findUnique({ where: { id: orgId } });
+    if (!org) return { success: false, error: "Organization not found." };
 
-  if (input.slug && input.slug !== org.slug) {
-    const taken = await db.organization.findUnique({ where: { slug: input.slug } });
-    if (taken) return { success: false, error: "Slug already in use." };
+    if (input.slug && input.slug !== org.slug) {
+      const taken = await db.organization.findUnique({ where: { slug: input.slug } });
+      if (taken) return { success: false, error: "Slug already in use." };
+    }
+
+    await db.organization.update({
+      where: { id: orgId },
+      data: {
+        name: input.name?.trim() ?? org.name,
+        slug: input.slug?.trim() ?? org.slug,
+        type: input.type ?? org.type,
+        logoUrl: input.logoUrl !== undefined ? input.logoUrl : org.logoUrl,
+        isVerified: input.isVerified ?? org.isVerified,
+      },
+    });
+
+    revalidatePath("/admin/organizations");
+    revalidatePath("/organizations");
+    revalidateTag("published-organizations");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("organizations", e);
   }
-
-  await db.organization.update({
-    where: { id: orgId },
-    data: {
-      name: input.name?.trim() ?? org.name,
-      slug: input.slug?.trim() ?? org.slug,
-      type: input.type ?? org.type,
-      logoUrl: input.logoUrl !== undefined ? input.logoUrl : org.logoUrl,
-      isVerified: input.isVerified ?? org.isVerified,
-    },
-  });
-
-  revalidatePath("/admin/organizations");
-  revalidatePath("/organizations");
-  revalidateTag("published-organizations");
-  return { success: true, data: undefined };
 }
 
 // ─── Org admin credential creation ───────────────────────────────────────────
@@ -341,89 +362,99 @@ export async function createOrgAdminCredentials(
   orgId: string,
   input: { fullName: string; email: string }
 ): Promise<ActionResult<{ userId: string }>> {
-  await requireAdmin();
+  try {
+    await requireAdmin();
 
-  const org = await db.organization.findUnique({ where: { id: orgId } });
-  if (!org) return { success: false, error: "Organisation not found." };
+    const org = await db.organization.findUnique({ where: { id: orgId } });
+    if (!org) return { success: false, error: "Organisation not found." };
 
-  // Check email not already in use
-  const existing = await db.user.findUnique({ where: { email: input.email.toLowerCase().trim() } });
-  if (existing) {
-    // If user exists, just add them to the org as ADMIN if not already
-    const alreadyMember = await db.organizationMember.findUnique({
-      where: { orgId_userId: { orgId, userId: existing.id } },
-    });
-    if (!alreadyMember) {
-      await db.organizationMember.create({
-        data: { orgId, userId: existing.id, role: "ADMIN" },
+    // Check email not already in use
+    const existing = await db.user.findUnique({ where: { email: input.email.toLowerCase().trim() } });
+    if (existing) {
+      // If user exists, just add them to the org as ADMIN if not already
+      const alreadyMember = await db.organizationMember.findUnique({
+        where: { orgId_userId: { orgId, userId: existing.id } },
       });
-      await db.user.update({
-        where: { id: existing.id },
-        data: { role: "ORG_ADMIN" },
-      });
+      if (!alreadyMember) {
+        await db.organizationMember.create({
+          data: { orgId, userId: existing.id, role: "ADMIN" },
+        });
+        await db.user.update({
+          where: { id: existing.id },
+          data: { role: "ORG_ADMIN" },
+        });
+      }
+      revalidatePath("/admin/organizations");
+      return { success: true, data: { userId: existing.id } };
     }
+
+    // Generate a secure temporary password
+    const tempPassword = randomBytes(5).toString("hex").toUpperCase() + "!1";
+    const passwordHash = await hash(tempPassword, 12);
+
+    // Generate username from email
+    const baseUsername = input.email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+    let username = baseUsername;
+    let suffix = 0;
+    while (await db.user.findUnique({ where: { username } })) {
+      suffix++;
+      username = `${baseUsername}${suffix}`;
+    }
+
+    const user = await db.user.create({
+      data: {
+        email: input.email.toLowerCase().trim(),
+        fullName: input.fullName.trim(),
+        username,
+        passwordHash,
+        role: "ORG_ADMIN",
+        emailVerified: true,
+      },
+    });
+
+    await db.organizationMember.create({
+      data: { orgId, userId: user.id, role: "ADMIN" },
+    });
+
+    // Send credentials email
+    await sendEmail({
+      to: user.email,
+      subject: `[ujuziPlus] Your Organisation Admin Account — ${org.name}`,
+      html: orgAdminCredentialsEmail({
+        fullName: user.fullName ?? input.fullName,
+        orgName: org.name,
+        email: user.email,
+        password: tempPassword,
+        loginUrl: `${APP_URL}/auth/login`,
+      }),
+    });
+
     revalidatePath("/admin/organizations");
-    return { success: true, data: { userId: existing.id } };
+    return { success: true, data: { userId: user.id } };
+
+  } catch (e) {
+    return actionFailure("organizations", e);
   }
-
-  // Generate a secure temporary password
-  const tempPassword = randomBytes(5).toString("hex").toUpperCase() + "!1";
-  const passwordHash = await hash(tempPassword, 12);
-
-  // Generate username from email
-  const baseUsername = input.email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
-  let username = baseUsername;
-  let suffix = 0;
-  while (await db.user.findUnique({ where: { username } })) {
-    suffix++;
-    username = `${baseUsername}${suffix}`;
-  }
-
-  const user = await db.user.create({
-    data: {
-      email: input.email.toLowerCase().trim(),
-      fullName: input.fullName.trim(),
-      username,
-      passwordHash,
-      role: "ORG_ADMIN",
-      emailVerified: true,
-    },
-  });
-
-  await db.organizationMember.create({
-    data: { orgId, userId: user.id, role: "ADMIN" },
-  });
-
-  // Send credentials email
-  await sendEmail({
-    to: user.email,
-    subject: `[ujuziPlus] Your Organisation Admin Account — ${org.name}`,
-    html: orgAdminCredentialsEmail({
-      fullName: user.fullName ?? input.fullName,
-      orgName: org.name,
-      email: user.email,
-      password: tempPassword,
-      loginUrl: `${APP_URL}/auth/login`,
-    }),
-  });
-
-  revalidatePath("/admin/organizations");
-  return { success: true, data: { userId: user.id } };
 }
 
 export async function adminDeleteOrganization(orgId: string): Promise<ActionResult> {
-  await requireAdmin();
-
   try {
-    await db.organization.delete({ where: { id: orgId } });
-  } catch {
-    return { success: false, error: "Could not delete this organization. Try again or contact support." };
-  }
+    await requireAdmin();
 
-  revalidatePath("/admin/organizations");
-  revalidatePath("/organizations");
-  revalidateTag("published-organizations");
-  return { success: true, data: undefined };
+    try {
+      await db.organization.delete({ where: { id: orgId } });
+    } catch {
+      return { success: false, error: "Could not delete this organization. Try again or contact support." };
+    }
+
+    revalidatePath("/admin/organizations");
+    revalidatePath("/organizations");
+    revalidateTag("published-organizations");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("organizations", e);
+  }
 }
 
 export async function getOrgAdminUsers(orgId: string) {

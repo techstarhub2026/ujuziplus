@@ -2,6 +2,7 @@
  * Admin server actions — Phase 5
  */
 "use server";
+import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -69,24 +70,29 @@ export async function approveCourse(
   adminId: string,
   courseId: string
 ): Promise<ActionResult> {
-  await guardAdmin(adminId);
+  try {
+    await guardAdmin(adminId);
 
-  const course = await db.course.update({
-    where: { id: courseId },
-    data: { status: CourseStatus.PUBLISHED },
-    select: { title: true, instructorId: true, slug: true },
-  });
+    const course = await db.course.update({
+      where: { id: courseId },
+      data: { status: CourseStatus.PUBLISHED },
+      select: { title: true, instructorId: true, slug: true },
+    });
 
-  await createNotification(course.instructorId, {
-    type: "SYSTEM",
-    title: "Course approved!",
-    message: `Your course "${course.title}" has been approved and is now live.`,
-    href: `/courses/${course.slug}`,
-  });
+    await createNotification(course.instructorId, {
+      type: "SYSTEM",
+      title: "Course approved!",
+      message: `Your course "${course.title}" has been approved and is now live.`,
+      href: `/courses/${course.slug}`,
+    });
 
-  revalidatePath("/admin/courses");
-  revalidateCourseCatalog(course.slug);
-  return { success: true, data: undefined };
+    revalidatePath("/admin/courses");
+    revalidateCourseCatalog(course.slug);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("admin", e);
+  }
 }
 
 export async function rejectCourse(
@@ -94,28 +100,33 @@ export async function rejectCourse(
   courseId: string,
   reason: string
 ): Promise<ActionResult> {
-  await guardAdmin(adminId);
+  try {
+    await guardAdmin(adminId);
 
-  const trimmed = reason.trim();
-  if (trimmed.length < 10) {
-    return { success: false, error: "Please provide a rejection reason (at least 10 characters)." };
+    const trimmed = reason.trim();
+    if (trimmed.length < 10) {
+      return { success: false, error: "Please provide a rejection reason (at least 10 characters)." };
+    }
+
+    const course = await db.course.update({
+      where: { id: courseId },
+      data: { status: CourseStatus.REJECTED },
+      select: { title: true, instructorId: true },
+    });
+
+    await createNotification(course.instructorId, {
+      type: "SYSTEM",
+      title: "Course needs changes",
+      message: `Your course "${course.title}" was not approved. Reason: ${trimmed}`,
+      href: `/instructor/courses`,
+    });
+
+    revalidatePath("/admin/courses");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("admin", e);
   }
-
-  const course = await db.course.update({
-    where: { id: courseId },
-    data: { status: CourseStatus.REJECTED },
-    select: { title: true, instructorId: true },
-  });
-
-  await createNotification(course.instructorId, {
-    type: "SYSTEM",
-    title: "Course needs changes",
-    message: `Your course "${course.title}" was not approved. Reason: ${trimmed}`,
-    href: `/instructor/courses`,
-  });
-
-  revalidatePath("/admin/courses");
-  return { success: true, data: undefined };
 }
 
 // ─── Instructor approval queue ────────────────────────────────────────────────
@@ -153,31 +164,36 @@ export async function approveInstructor(
   adminId: string,
   userId: string
 ): Promise<ActionResult> {
-  await guardAdmin(adminId);
+  try {
+    await guardAdmin(adminId);
 
-  const user = await db.user.update({
-    where: { id: userId },
-    data: { instructorStatus: "APPROVED" },
-    select: { fullName: true, email: true },
-  });
+    const user = await db.user.update({
+      where: { id: userId },
+      data: { instructorStatus: "APPROVED" },
+      select: { fullName: true, email: true },
+    });
 
-  await createNotification(userId, {
-    type: "SYSTEM",
-    title: "Instructor application approved!",
-    message: "Your instructor application has been approved. You can now sign in.",
-    href: "/instructor/dashboard",
-  });
+    await createNotification(userId, {
+      type: "SYSTEM",
+      title: "Instructor application approved!",
+      message: "Your instructor application has been approved. You can now sign in.",
+      href: "/instructor/dashboard",
+    });
 
-  sendEmail({
-    to: user.email,
-    subject: "Your UjuziLab instructor application was approved",
-    html: instructorApprovedEmail(user.fullName),
-  }).then((result) => {
-    if (!result.ok) console.error("Instructor approval email failed:", result.error);
-  });
+    sendEmail({
+      to: user.email,
+      subject: "Your UjuziLab instructor application was approved",
+      html: instructorApprovedEmail(user.fullName),
+    }).then((result) => {
+      if (!result.ok) console.error("Instructor approval email failed:", result.error);
+    });
 
-  revalidatePath("/admin/instructors");
-  return { success: true, data: undefined };
+    revalidatePath("/admin/instructors");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("admin", e);
+  }
 }
 
 export async function rejectInstructor(
@@ -185,29 +201,34 @@ export async function rejectInstructor(
   userId: string,
   reason: string
 ): Promise<ActionResult> {
-  await guardAdmin(adminId);
+  try {
+    await guardAdmin(adminId);
 
-  const trimmed = reason.trim();
-  if (trimmed.length < 10) {
-    return { success: false, error: "Please provide a rejection reason (at least 10 characters)." };
+    const trimmed = reason.trim();
+    if (trimmed.length < 10) {
+      return { success: false, error: "Please provide a rejection reason (at least 10 characters)." };
+    }
+
+    const user = await db.user.update({
+      where: { id: userId },
+      data: { instructorStatus: "REJECTED" },
+      select: { fullName: true, email: true },
+    });
+
+    sendEmail({
+      to: user.email,
+      subject: "Update on your UjuziLab instructor application",
+      html: instructorRejectedEmail(user.fullName, trimmed),
+    }).then((result) => {
+      if (!result.ok) console.error("Instructor rejection email failed:", result.error);
+    });
+
+    revalidatePath("/admin/instructors");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("admin", e);
   }
-
-  const user = await db.user.update({
-    where: { id: userId },
-    data: { instructorStatus: "REJECTED" },
-    select: { fullName: true, email: true },
-  });
-
-  sendEmail({
-    to: user.email,
-    subject: "Update on your UjuziLab instructor application",
-    html: instructorRejectedEmail(user.fullName, trimmed),
-  }).then((result) => {
-    if (!result.ok) console.error("Instructor rejection email failed:", result.error);
-  });
-
-  revalidatePath("/admin/instructors");
-  return { success: true, data: undefined };
 }
 
 // ─── User management ──────────────────────────────────────────────────────────
@@ -306,14 +327,19 @@ export async function changeUserRole(
   userId: string,
   role: Role
 ): Promise<ActionResult> {
-  await guardAdmin(adminId);
-  if (adminId === userId) {
-    return { success: false, error: "You cannot change your own role." };
-  }
+  try {
+    await guardAdmin(adminId);
+    if (adminId === userId) {
+      return { success: false, error: "You cannot change your own role." };
+    }
 
-  await db.user.update({ where: { id: userId }, data: { role } });
-  revalidatePath("/admin/users");
-  return { success: true, data: undefined };
+    await db.user.update({ where: { id: userId }, data: { role } });
+    revalidatePath("/admin/users");
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("admin", e);
+  }
 }
 
 export async function suspendUser(
@@ -321,15 +347,20 @@ export async function suspendUser(
   userId: string,
   suspend: boolean
 ): Promise<ActionResult> {
-  await guardAdmin(adminId);
-  if (adminId === userId) {
-    return { success: false, error: "You cannot suspend your own account." };
-  }
+  try {
+    await guardAdmin(adminId);
+    if (adminId === userId) {
+      return { success: false, error: "You cannot suspend your own account." };
+    }
 
-  await db.user.update({ where: { id: userId }, data: { isActive: !suspend } });
-  revalidatePath("/admin/users");
-  revalidatePath(`/admin/users/${userId}`);
-  return { success: true, data: undefined };
+    await db.user.update({ where: { id: userId }, data: { isActive: !suspend } });
+    revalidatePath("/admin/users");
+    revalidatePath(`/admin/users/${userId}`);
+    return { success: true, data: undefined };
+
+  } catch (e) {
+    return actionFailure("admin", e);
+  }
 }
 
 // ─── All courses (admin view) ─────────────────────────────────────────────────
@@ -351,9 +382,14 @@ export async function deleteCourseAsAdmin(
   adminId: string,
   courseId: string
 ): Promise<ActionResult<{ archived: boolean }>> {
-  await guardAdmin(adminId);
+  try {
+    await guardAdmin(adminId);
 
-  return archiveOrDeleteCourse(courseId);
+    return archiveOrDeleteCourse(courseId);
+
+  } catch (e) {
+    return actionFailure("admin", e);
+  }
 }
 
 // ─── Payments (admin) ─────────────────────────────────────────────────────────
