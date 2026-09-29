@@ -3725,22 +3725,31 @@
      media query while the card itself is barely 600px. The portrait stacked on
      top at 4:3 and the card grew to roughly 900px tall. A container query asks
      the question that actually matters. */
+  /* `container-type: inline-size` cannot live on the grid itself: it makes the
+     element's own size independent of its contents, so the portrait's
+     `height: 100%` resolved against nothing and the column collapsed to zero
+     — the photograph vanished. The wrapper carries the container; the grid
+     inside it is queried normally. */
+  .mentor-lead-wrap {
+    container-type: inline-size;
+    display: block;
+  }
+
   .mentor-lead {
     @apply overflow-hidden rounded-2xl border border-gray-200 bg-white;
-    container-type: inline-size;
     display: grid;
     grid-template-columns: 1fr;
   }
 
   @container (min-width: 30rem) {
     .mentor-lead {
-      grid-template-columns: 11.5rem 1fr;
+      grid-template-columns: minmax(9rem, 30%) 1fr;
     }
   }
 
   @container (min-width: 46rem) {
     .mentor-lead {
-      grid-template-columns: 14rem 1fr;
+      grid-template-columns: 13rem 1fr;
     }
   }
 
@@ -3755,7 +3764,7 @@
     .mentor-lead__portrait {
       aspect-ratio: auto;
       height: 100%;
-      min-height: 100%;
+      min-height: 16rem;
     }
   }
 

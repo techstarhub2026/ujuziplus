@@ -38,7 +38,9 @@ export function MentorFeature({
   const blurb = mentor.quote || mentor.hook || mentor.bio;
 
   return (
-    <article className={cn("mentor-lead", className)}>
+    // The wrapper is what the container queries measure — see globals.css.
+    <div className={cn("mentor-lead-wrap", className)}>
+    <article className="mentor-lead">
       <Link
         href={`/mentors/${mentor.slug}`}
         className="mentor-lead__portrait"
@@ -134,5 +136,6 @@ export function MentorFeature({
         </div>
       </div>
     </article>
+    </div>
   );
 }
