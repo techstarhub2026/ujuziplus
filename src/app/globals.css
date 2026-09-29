@@ -3719,15 +3719,28 @@
   }
 
   /* ── Featured mentor ── */
+  /* Side by side as soon as the CARD is wide enough, which is not the same as
+     the window being wide enough: on the mentors index this sits in a flex row
+     beside the match wizard, so at 1280px the viewport passes the old 768px
+     media query while the card itself is barely 600px. The portrait stacked on
+     top at 4:3 and the card grew to roughly 900px tall. A container query asks
+     the question that actually matters. */
   .mentor-lead {
     @apply overflow-hidden rounded-2xl border border-gray-200 bg-white;
+    container-type: inline-size;
     display: grid;
     grid-template-columns: 1fr;
   }
 
-  @media (min-width: 768px) {
+  @container (min-width: 30rem) {
     .mentor-lead {
-      grid-template-columns: 15rem 1fr;
+      grid-template-columns: 11.5rem 1fr;
+    }
+  }
+
+  @container (min-width: 46rem) {
+    .mentor-lead {
+      grid-template-columns: 14rem 1fr;
     }
   }
 
@@ -3738,11 +3751,11 @@
     aspect-ratio: 4 / 3;
   }
 
-  @media (min-width: 768px) {
+  @container (min-width: 30rem) {
     .mentor-lead__portrait {
       aspect-ratio: auto;
       height: 100%;
-      min-height: 17rem;
+      min-height: 100%;
     }
   }
 
@@ -3757,7 +3770,7 @@
   }
 
   .mentor-lead__body {
-    @apply flex flex-col p-5 sm:p-6;
+    @apply flex flex-col p-4 sm:p-5;
   }
 
   .mentor-lead__eyebrow {
@@ -3787,12 +3800,12 @@
   /* The mentor's own words, set as body copy rather than a serif pull-quote
      with a decorative glyph — at this size the ornament outweighed the line. */
   .mentor-lead__blurb {
-    @apply mt-3 max-w-prose text-[0.9375rem] leading-relaxed text-gray-700;
+    @apply mt-2.5 max-w-prose text-sm leading-relaxed text-gray-700;
     text-wrap: pretty;
   }
 
   .mentor-lead__tags {
-    @apply mt-3.5 flex flex-wrap gap-1.5;
+    @apply mt-3 flex flex-wrap gap-1.5;
   }
 
   .mentor-lead__tag {
@@ -3802,7 +3815,7 @@
   /* Facts a reader actually weighs, as a labelled list. The old panel showed
      a name, a role and two tags in the footprint of a hero. */
   .mentor-lead__facts {
-    @apply mt-4 flex flex-wrap gap-x-7 gap-y-3 border-t border-gray-100 pt-4;
+    @apply mt-4 grid grid-cols-2 gap-x-5 gap-y-2.5 border-t border-gray-100 pt-3.5;
   }
 
   .mentor-lead__fact dt {
@@ -3822,7 +3835,7 @@
   }
 
   .mentor-lead__actions {
-    @apply mt-5 flex flex-wrap items-center gap-3;
+    @apply mt-4 flex flex-wrap items-center gap-3;
   }
 
   .mentor-lead__cta {
