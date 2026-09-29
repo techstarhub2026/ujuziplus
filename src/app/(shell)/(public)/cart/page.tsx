@@ -44,6 +44,7 @@ export default function CartPage() {
     return (
       <div className="learner-canvas mx-auto max-w-3xl px-4 py-12">
         <EmptyState
+          as="h1"
           icon={<ShoppingCart className="h-8 w-8 text-brand" />}
           title="Your cart is empty"
           description="Browse courses or learning kits to add to your cart."

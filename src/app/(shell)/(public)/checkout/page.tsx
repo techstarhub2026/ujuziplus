@@ -75,6 +75,7 @@ export default function CheckoutPage() {
     return (
       <div className="learner-canvas mx-auto max-w-xl px-4 py-12">
         <EmptyState
+          as="h1"
           icon={<ShoppingBag className="h-8 w-8 text-brand" />}
           title="Your cart is empty"
           description="Add courses or kits before checking out."
