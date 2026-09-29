@@ -89,18 +89,26 @@ export function AdminMentorForm({
 
   const save = () => {
     startTransition(async () => {
-      if (mentorId) {
-        const res = await updateMentor(mentorId, form);
-        if (res.success) {
-          showToast("Mentor saved", "success");
-          router.refresh();
-        } else showToast(!res.success ? res.error : "Failed", "error");
-      } else {
-        const res = await createMentor(form);
-        if (res.success && res.data) {
-          showToast("Mentor created", "success");
-          router.push(`/admin/mentors/${res.data.mentorId}/edit`);
-        } else showToast(!res.success ? res.error : "Failed", "error");
+      // A server action that throws takes the whole page down with the error
+      // boundary — "Something went wrong", with the operator's unsaved work
+      // gone and nothing said about why. Anything that gets past the action's
+      // own handling is shown here instead, and the form stays as it was.
+      try {
+        if (mentorId) {
+          const res = await updateMentor(mentorId, form);
+          if (res.success) {
+            showToast("Mentor saved", "success");
+            router.refresh();
+          } else showToast(res.error, "error");
+        } else {
+          const res = await createMentor(form);
+          if (res.success && res.data) {
+            showToast("Mentor created", "success");
+            router.push(`/admin/mentors/${res.data.mentorId}/edit`);
+          } else showToast(!res.success ? res.error : "Failed", "error");
+        }
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : "Could not save this mentor.", "error");
       }
     });
   };
