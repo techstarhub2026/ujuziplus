@@ -30,6 +30,25 @@ export function actionFailure(context: string, e: unknown): ActionResult<never> 
 
   // Prisma's own error codes, which carry more meaning than their message text.
   if (message.includes("Unique constraint")) {
+    // Prisma names the constraint it rejected, which is the one thing the
+    // operator needs: "already exists" sends them hunting through a form of
+    // twenty fields for the one that clashed.
+    if (message.includes("userId")) {
+      return {
+        success: false,
+        error:
+          "That user account is already linked to another mentor. Each account can only be linked once — clear the linked account, or pick a different one.",
+      };
+    }
+    if (message.includes("slug")) {
+      return {
+        success: false,
+        error: "Another entry already uses that name. Change the name slightly and save again.",
+      };
+    }
+    if (message.includes("email")) {
+      return { success: false, error: "That email address is already in use." };
+    }
     return {
       success: false,
       error: "Something with that name or link already exists — try a different one.",

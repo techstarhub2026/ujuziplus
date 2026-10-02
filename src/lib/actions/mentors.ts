@@ -655,6 +655,22 @@ export async function createMentor(input: MentorSaveInput): Promise<ActionResult
     await requireAdmin();
     if (!input.displayName.trim()) return { success: false, error: "Display name is required." };
 
+    // See updateMentor: the userId column is unique, and the raw constraint
+    // error names nothing an operator can act on.
+    const linkedUserId = input.userId?.trim() || null;
+    if (linkedUserId) {
+      const clash = await db.mentorProfile.findUnique({
+        where: { userId: linkedUserId },
+        select: { displayName: true },
+      });
+      if (clash) {
+        return {
+          success: false,
+          error: `That user account is already linked to ${clash.displayName}. Each account can only be linked to one mentor.`,
+        };
+      }
+    }
+
     const slug = await uniqueMentorSlug(input.displayName);
     const mentor = await db.mentorProfile.create({
       data: mentorPayload(slug, input),
@@ -672,6 +688,24 @@ export async function updateMentor(mentorId: string, input: MentorSaveInput): Pr
     await requireAdmin();
     const existing = await db.mentorProfile.findUnique({ where: { id: mentorId } });
     if (!existing) return { success: false, error: "Mentor not found." };
+
+    // One account, one mentor profile: the column is unique, so without this
+    // the save reaches Prisma and comes back as a constraint violation naming
+    // `mentor_profiles_userId_key` — true, but not something an operator can
+    // act on. Naming the mentor who holds it tells them what to change.
+    const linkedUserId = input.userId?.trim() || null;
+    if (linkedUserId && linkedUserId !== existing.userId) {
+      const clash = await db.mentorProfile.findUnique({
+        where: { userId: linkedUserId },
+        select: { displayName: true },
+      });
+      if (clash) {
+        return {
+          success: false,
+          error: `That user account is already linked to ${clash.displayName}. Each account can only be linked to one mentor.`,
+        };
+      }
+    }
 
     const slug =
       slugify(input.displayName) === existing.slug
