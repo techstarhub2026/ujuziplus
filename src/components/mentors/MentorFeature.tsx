@@ -1,8 +1,17 @@
 import Link from "next/link";
 import { ArrowRight, BadgeCheck, MapPin, Star } from "lucide-react";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { cn } from "@/lib/utils";
 import type { SerializedMentor } from "@/lib/actions/mentors";
 
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
 
 /**
  * The featured-mentor treatment, shared by the homepage mentor section and
@@ -15,10 +24,11 @@ import type { SerializedMentor } from "@/lib/actions/mentors";
  * mentor's own words room, and puts the facts a reader actually weighs
  * (rating, learners helped, experience, location) into a scannable list.
  *
- * No portrait: the card shares a row with the match wizard and is only ever
- * about 600px wide, so a photograph beside the text cramped both and one
- * above it doubled the card's height. The face belongs on the profile this
- * card links to.
+ * The portrait is a small round avatar beside the name rather than a column
+ * of its own. This card shares a row with the match wizard and is only ever
+ * about 600px wide: a full-height portrait beside the text squeezed both into
+ * three-word lines, and one above it took the card past 900px tall. At this
+ * size the face still reads, and costs the card nothing.
  */
 export function MentorFeature({
   mentor,
@@ -38,16 +48,41 @@ export function MentorFeature({
       <div className="mentor-lead__body">
         <p className="mentor-lead__eyebrow">Featured mentor</p>
 
-        <h3 className="mentor-lead__name">
-          <Link href={`/mentors/${mentor.slug}`} className="mentor-lead__name-link">
-            {mentor.displayName}
+        <div className="mentor-lead__ident">
+          <Link
+            href={`/mentors/${mentor.slug}`}
+            className="mentor-lead__avatar"
+            tabIndex={-1}
+            aria-hidden
+          >
+            {mentor.avatarUrl ? (
+              <OptimizedImage
+                src={mentor.avatarUrl}
+                alt=""
+                fill
+                className="mentor-lead__avatar-img"
+                sizes="72px"
+              />
+            ) : (
+              <span className="mentor-lead__monogram">
+                {initials(mentor.displayName)}
+              </span>
+            )}
           </Link>
-          {mentor.isFeatured && (
-            <BadgeCheck className="mentor-lead__verified" aria-label="Verified" />
-          )}
-        </h3>
 
-        {role && <p className="mentor-lead__role">{role}</p>}
+          <div className="mentor-lead__ident-text">
+            <h3 className="mentor-lead__name">
+              <Link href={`/mentors/${mentor.slug}`} className="mentor-lead__name-link">
+                {mentor.displayName}
+              </Link>
+              {mentor.isFeatured && (
+                <BadgeCheck className="mentor-lead__verified" aria-label="Verified" />
+              )}
+            </h3>
+
+            {role && <p className="mentor-lead__role">{role}</p>}
+          </div>
+        </div>
 
         {blurb && <p className="mentor-lead__blurb">{blurb}</p>}
 

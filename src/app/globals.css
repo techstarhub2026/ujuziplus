@@ -3735,8 +3735,27 @@
     @apply overflow-hidden rounded-2xl border border-gray-200 bg-white;
   }
 
-  .mentor-lead__portrait {
-    display: none;
+  /* Avatar, name and role on one line. A round 4.5rem crop shows the face
+     without taking a column: the card is only ~600px wide, so a full-height
+     portrait beside the text left both cramped. */
+  .mentor-lead__ident {
+    @apply flex items-center gap-3.5;
+  }
+
+  .mentor-lead__ident-text {
+    @apply min-w-0 flex-1;
+  }
+
+  .mentor-lead__avatar {
+    @apply relative block shrink-0 overflow-hidden rounded-full bg-navy/5 ring-2 ring-white;
+    height: 4.5rem;
+    width: 4.5rem;
+    box-shadow: 0 2px 10px rgb(0 0 77 / 0.1);
+  }
+
+  .mentor-lead__avatar-img {
+    @apply h-full w-full object-cover;
+    object-position: center 20%;
   }
 
   .mentor-lead__img {
@@ -3744,8 +3763,9 @@
     object-position: center 22%;
   }
 
+  /* Sized for the 4.5rem avatar, not the full-height portrait it replaced. */
   .mentor-lead__monogram {
-    @apply flex h-full w-full items-center justify-center font-display text-4xl font-bold text-brand;
+    @apply flex h-full w-full items-center justify-center font-display text-xl font-bold text-brand;
     background: linear-gradient(135deg, rgb(243 146 35 / 0.14), rgb(0 0 77 / 0.06));
   }
 
@@ -3774,7 +3794,7 @@
   }
 
   .mentor-lead__role {
-    @apply mt-1 text-sm text-gray-500;
+    @apply mt-0.5 text-sm text-gray-500;
   }
 
   /* The mentor's own words, set as body copy rather than a serif pull-quote
