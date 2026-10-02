@@ -3746,16 +3746,11 @@
     @apply min-w-0 flex-1;
   }
 
+  /* The shared Avatar carries its own size and rounding; this is just the
+     link wrapping it. */
   .mentor-lead__avatar {
-    @apply relative block shrink-0 overflow-hidden rounded-full bg-navy/5 ring-2 ring-white;
-    height: 4.5rem;
-    width: 4.5rem;
+    @apply block shrink-0 rounded-full;
     box-shadow: 0 2px 10px rgb(0 0 77 / 0.1);
-  }
-
-  .mentor-lead__avatar-img {
-    @apply h-full w-full object-cover;
-    object-position: center 20%;
   }
 
   .mentor-lead__img {

@@ -1,17 +1,9 @@
 import Link from "next/link";
 import { ArrowRight, BadgeCheck, MapPin, Star } from "lucide-react";
-import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import type { SerializedMentor } from "@/lib/actions/mentors";
 
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
 
 /**
  * The featured-mentor treatment, shared by the homepage mentor section and
@@ -49,25 +41,17 @@ export function MentorFeature({
         <p className="mentor-lead__eyebrow">Featured mentor</p>
 
         <div className="mentor-lead__ident">
+          {/* The shared Avatar renders at twice its box for retina, and falls
+              back to initials both when there is no picture and when the one
+              on record fails to load — this is a server component, so it
+              cannot handle the error itself. */}
           <Link
             href={`/mentors/${mentor.slug}`}
             className="mentor-lead__avatar"
             tabIndex={-1}
             aria-hidden
           >
-            {mentor.avatarUrl ? (
-              <OptimizedImage
-                src={mentor.avatarUrl}
-                alt=""
-                fill
-                className="mentor-lead__avatar-img"
-                sizes="72px"
-              />
-            ) : (
-              <span className="mentor-lead__monogram">
-                {initials(mentor.displayName)}
-              </span>
-            )}
+            <Avatar src={mentor.avatarUrl} alt={mentor.displayName} size="xl" />
           </Link>
 
           <div className="mentor-lead__ident-text">

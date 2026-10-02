@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +39,13 @@ export function Avatar({
     .slice(0, 2)
     .toUpperCase();
 
+  // A missing src fell back to initials, but a src pointing at a file that is
+  // no longer there did not — the browser drew its own broken-image icon in
+  // the middle of the circle. Treating a load failure the same as no picture
+  // keeps the initials showing instead.
+  const [failed, setFailed] = useState(false);
+  const showImage = Boolean(src) && !failed;
+
   return (
     <div className={cn("relative inline-flex shrink-0", className)}>
       <div
@@ -50,14 +60,17 @@ export function Avatar({
             "ring-[3px] ring-brand shadow-lg shadow-black/25"
         )}
       >
-        {src ? (
+        {showImage ? (
           <Image
-            src={src}
+            src={src!}
             alt={alt}
-            width={px}
-            height={px}
+            // Twice the rendered size, so the picture is still sharp on a
+            // retina screen rather than scaled up from exactly its box.
+            width={px * 2}
+            height={px * 2}
             className="h-full w-full object-cover"
-            unoptimized={src.endsWith(".svg") || src.includes("dicebear.com")}
+            unoptimized={src!.endsWith(".svg") || src!.includes("dicebear.com")}
+            onError={() => setFailed(true)}
           />
         ) : (
           <span className="flex h-full w-full items-center justify-center">{initials}</span>
