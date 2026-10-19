@@ -2,6 +2,7 @@
 import { actionFailure } from "@/lib/actions/action-error";
 
 import { revalidatePath, unstable_cache } from "next/cache";
+import { revalidateProgramCatalog } from "@/lib/revalidate-catalog";
 import { db } from "@/lib/db";
 import type { ActionResult } from "./courses";
 import { ProgramFormat, ProgramStatus } from "@prisma/client";
@@ -168,9 +169,8 @@ export async function registerForProgram(
       });
     }
 
+    revalidateProgramCatalog(programSlug);
     revalidatePath("/dashboard/programs");
-    revalidatePath("/programs");
-    revalidatePath(`/programs/${programSlug}`);
     return { success: true, data: {} };
 
   } catch (e) {
@@ -260,9 +260,8 @@ export async function createProgram(
       },
     });
 
+    revalidateProgramCatalog();
     revalidatePath("/admin/programs");
-    revalidatePath("/programs");
-    revalidatePath("/");
     return { success: true, data: { programId: program.id } };
 
   } catch (e) {
@@ -303,10 +302,8 @@ export async function updateProgram(
       },
     });
 
+    revalidateProgramCatalog(slug);
     revalidatePath("/admin/programs");
-    revalidatePath(`/programs/${slug}`);
-    revalidatePath("/programs");
-    revalidatePath("/");
     return { success: true, data: undefined };
 
   } catch (e) {
@@ -318,8 +315,8 @@ export async function deleteProgram(programId: string): Promise<ActionResult> {
   try {
     await requireAdmin();
     await db.program.delete({ where: { id: programId } });
+    revalidateProgramCatalog();
     revalidatePath("/admin/programs");
-    revalidatePath("/programs");
     return { success: true, data: undefined };
 
   } catch (e) {
@@ -379,8 +376,8 @@ export async function createOrgProgram(
       },
     });
 
+    revalidateProgramCatalog();
     revalidatePath(`/org/${orgId}/programs`);
-    revalidatePath("/programs");
     return { success: true, data: { programId: program.id } };
 
   } catch (e) {
@@ -431,9 +428,8 @@ export async function updateOrgProgram(
       },
     });
 
+    revalidateProgramCatalog(slug);
     revalidatePath(`/org/${orgId}/programs`);
-    revalidatePath(`/programs/${slug}`);
-    revalidatePath("/programs");
     return { success: true, data: undefined };
 
   } catch (e) {
